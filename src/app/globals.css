@@ -80,6 +80,7 @@ button { cursor: pointer; }
 .goal-card h1 { margin: 8px 0 4px; font-size: 17px; line-height: 1.35; }
 .goal-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .goal-tag { color: #152014; background: var(--lime); border-radius: 4px; padding: 3px 6px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.workspace-error { margin: 0 18px; color: #ffb095; font-size: 12px; line-height: 1.5; }
 
 .feed { flex: 1; overflow: auto; padding: 2px 18px 20px; }
 .feed-heading { margin: 13px 0 10px; color: var(--faint); font-size: 11px; font-weight: 650; }

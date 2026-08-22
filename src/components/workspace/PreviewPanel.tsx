@@ -65,7 +65,7 @@ const versions = [
   { id: "V2", label: "Version V2", html: bookingHtml("#8a5d9f") },
 ];
 
-export function PreviewPanel() {
+export function PreviewPanel({ projectTitle }: { projectTitle: string }) {
   const [selectedVersion, setSelectedVersion] = useState("V1");
   const [selectedTab, setSelectedTab] = useState<"preview" | "code" | "versions">("preview");
   const active = versions.find((version) => version.id === selectedVersion) ?? versions[0];
@@ -76,7 +76,7 @@ export function PreviewPanel() {
       <header className="preview-header">
         <div>
           <p className="eyebrow">应用工作台</p>
-          <h2 className="preview-title">摄影预约助手</h2>
+          <h2 className="preview-title">{projectTitle}</h2>
         </div>
         <div className="preview-actions">
           <span className="version-chip">{active.label}</span>
@@ -140,4 +140,3 @@ export function PreviewPanel() {
     </div>
   );
 }
-

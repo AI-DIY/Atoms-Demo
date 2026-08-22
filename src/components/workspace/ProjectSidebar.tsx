@@ -32,7 +32,7 @@ const roles: Role[] = [
   { label: "增长顾问", subtitle: "实验与触达", color: "#ffb6cf", Icon: Settings2 },
 ];
 
-export function ProjectSidebar() {
+export function ProjectSidebar({ loading, title }: { loading: boolean; title: string }) {
   return (
     <div className="sidebar">
       <div className="brand">
@@ -53,8 +53,8 @@ export function ProjectSidebar() {
         <button className="project-row active" type="button">
           <i className="project-dot" aria-hidden />
           <span>
-            <strong>摄影预约助手</strong>
-            <span>团队计划待审批</span>
+            <strong>{title}</strong>
+            <span>{loading ? "正在加载" : "项目草稿"}</span>
           </span>
         </button>
       </section>
@@ -86,4 +86,3 @@ export function ProjectSidebar() {
     </div>
   );
 }
-

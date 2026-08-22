@@ -13,7 +13,7 @@ const events = [
     name: "产品经理",
     time: "等待中",
     color: "#ffb095",
-    text: "批准后将整理核心用户、预约流程与可验证的交互验收条件。",
+    text: "批准后将整理核心用户、核心流程与可验证的交互验收条件。",
   },
   {
     name: "架构师",
@@ -29,7 +29,17 @@ const events = [
   },
 ];
 
-export function ConversationPanel() {
+export function ConversationPanel({
+  error,
+  loading,
+  projectGoal,
+  projectTitle,
+}: {
+  error: string | null;
+  loading: boolean;
+  projectGoal: string;
+  projectTitle: string;
+}) {
   return (
     <div className="conversation">
       <header className="conversation-header">
@@ -45,11 +55,13 @@ export function ConversationPanel() {
       <div className="goal-card">
         <div className="goal-card-top">
           <span>项目目标</span>
-          <span className="goal-tag">计划中</span>
+          <span className="goal-tag">{loading ? "加载中" : "计划中"}</span>
         </div>
-        <h1>为摄影师创建预约与报价工具</h1>
-        <p>统一收集客户信息、安排预约时间，并提供清晰的报价跟进流程。</p>
+        <h1>{projectGoal}</h1>
+        <p>{projectTitle}</p>
       </div>
+
+      {error ? <p className="workspace-error" role="alert">{error}</p> : null}
 
       <div className="feed">
         <p className="feed-heading">团队运行记录</p>
@@ -88,4 +100,3 @@ export function ConversationPanel() {
     </div>
   );
 }
-

@@ -4,7 +4,7 @@ import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 
 describe("PreviewPanel", () => {
   it("uses a script-only iframe sandbox and switches the selected version", () => {
-    render(<PreviewPanel />);
+    render(<PreviewPanel projectTitle="摄影预约助手" />);
 
     expect(screen.getByTitle("Generated application")).toHaveAttribute(
       "sandbox",
@@ -16,4 +16,3 @@ describe("PreviewPanel", () => {
     expect(screen.getByText("Version V2")).toBeInTheDocument();
   });
 });
-
