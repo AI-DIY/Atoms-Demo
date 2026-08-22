@@ -76,7 +76,7 @@ export function PreviewPanel({
               <span className="address-lights" aria-hidden><i /><i /><i /></span>
               <span>preview.agent-studio.local</span>
             </div>
-            <iframe className="generated-frame" sandbox="allow-scripts" srcDoc={safeHtml} title="Generated application" />
+            <iframe className="generated-frame" sandbox="allow-scripts allow-forms" srcDoc={safeHtml} title="Generated application" />
           </div>
         ) : null}
         {selectedTab === "code" ? <pre className="code-view">{safeHtml}</pre> : null}

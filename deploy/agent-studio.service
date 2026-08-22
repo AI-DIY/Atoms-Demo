@@ -1,0 +1,27 @@
+[Unit]
+Description=Agent Studio Next.js service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentstudio
+Group=agentstudio
+WorkingDirectory=/opt/agent-studio/.next/standalone
+EnvironmentFile=/etc/agent-studio.env
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3000
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/agent-studio
+StateDirectory=agent-studio
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

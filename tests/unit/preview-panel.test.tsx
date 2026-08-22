@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 
 describe("PreviewPanel", () => {
-  it("uses a script-only iframe sandbox and switches database versions", () => {
+  it("allows generated forms while keeping the iframe sandboxed and switches database versions", () => {
     render(
       <PreviewPanel
         currentVersion={1}
@@ -18,7 +18,7 @@ describe("PreviewPanel", () => {
     const preview = screen.getByTitle("Generated application");
     expect(preview).toHaveAttribute(
       "sandbox",
-      "allow-scripts",
+      "allow-scripts allow-forms",
     );
     expect(preview).toHaveAttribute("srcdoc", expect.stringContaining("版本一"));
 
