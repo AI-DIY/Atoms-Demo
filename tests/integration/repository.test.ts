@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/server/prisma";
 import {
@@ -49,14 +50,32 @@ describe("project repository", () => {
       title: "V2",
       html: "<!doctype html><html><body>v2</body></html>",
     });
+    const beforeRestore = await getProject(project.id, project.ownerToken);
 
     const restored = await restoreVersion(project.id, project.ownerToken, first.id);
     const loaded = await getProject(project.id, project.ownerToken);
 
+    expect(beforeRestore.currentVersion).toBe(2);
     expect(restored.version).toBe(1);
     expect(loaded.currentVersion).toBe(1);
     expect(loaded.versions).toHaveLength(2);
     expect(loaded.status).toBe("draft");
+  });
+
+  it("hides a nonexistent project from both reads and writes", async () => {
+    const missingProjectId = randomUUID();
+    const ownerToken = randomUUID();
+
+    await expect(getProject(missingProjectId, ownerToken)).rejects.toThrow(
+      "Project not found",
+    );
+    await expect(
+      appendMessage(missingProjectId, ownerToken, {
+        role: "leader",
+        kind: "assistant",
+        content: "不可写入",
+      }),
+    ).rejects.toThrow("Project not found");
   });
 
   it("persists messages and a completed run only for the project owner", async () => {
