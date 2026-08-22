@@ -71,6 +71,29 @@ describe("projects API", () => {
     await expect(response.json()).resolves.toEqual({ error: "Request body too large" });
   });
 
+  it("rejects a chunked request that exceeds the safety limit without Content-Length", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(maxProjectRequestBytes));
+        controller.enqueue(new Uint8Array([0]));
+        controller.close();
+      },
+    });
+    const request = new Request("http://localhost/api/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    expect(request.headers.get("content-length")).toBeNull();
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Request body too large" });
+  });
+
   it("loads a project for its owner without exposing the owner token", async () => {
     const createdResponse = await POST(
       new Request("http://localhost/api/projects", {
