@@ -89,6 +89,61 @@ describe("WorkspaceShell", () => {
     expect(clientApi.createProject).not.toHaveBeenCalled();
   });
 
+  it("restores the latest awaiting team approval after loading the project", async () => {
+    window.localStorage.setItem(
+      projectIdentityStorageKey,
+      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
+    );
+    clientApi.loadProject.mockResolvedValueOnce({
+      ...loadedProject,
+      status: "awaiting_approval",
+      runs: [
+        { id: "old-run", mode: "team", status: "awaiting_approval", startedAt: "2026-08-21T10:00:00.000Z" },
+        { id: "latest-run", mode: "team", status: "awaiting_approval", startedAt: "2026-08-22T10:00:00.000Z" },
+        { id: "mention-run", mode: "mention", status: "awaiting_approval", startedAt: "2026-08-22T11:00:00.000Z" },
+      ],
+    });
+
+    render(<WorkspaceShell />);
+
+    expect(await screen.findByRole("button", { name: "开始构建" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "开始构建" }));
+
+    await waitFor(() => {
+      expect(clientApi.approveRun).toHaveBeenCalledWith(
+        "project-1",
+        "owner-token-1",
+        "latest-run",
+        expect.any(Function),
+      );
+    });
+  });
+
+  it("同步 awaiting approval 与 failed 事件到目标状态", async () => {
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.awaiting_approval", { runId: "run-status" });
+        onEvent("run.failed", { error: "计划服务不可用" });
+      },
+    );
+
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "为摄影师创建预约工具" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("运行失败")).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent("计划服务不可用");
+    });
+  });
+
   it("starts a team plan, approves it, and refreshes the completed version", async () => {
     const completedProject = {
       ...loadedProject,

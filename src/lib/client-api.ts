@@ -17,7 +17,9 @@ export type ProjectVersion = {
 
 export type ProjectRun = {
   id: string;
+  mode: string;
   status: string;
+  startedAt?: string;
   steps?: Array<{ role: string; status: string }>;
 };
 

@@ -23,6 +23,48 @@ function eventData(data: unknown): Record<string, unknown> {
   return data && typeof data === "object" ? data as Record<string, unknown> : {};
 }
 
+function latestAwaitingTeamRunId(project: LoadedProject): string | null {
+  const pendingRuns = (project.runs ?? []).filter(
+    (run) => run.mode === "team" && run.status === "awaiting_approval",
+  );
+  const latest = pendingRuns.reduce<typeof pendingRuns[number] | undefined>(
+    (current, run) => {
+      if (!current) {
+        return run;
+      }
+
+      return (run.startedAt ?? "") > (current.startedAt ?? "") ? run : current;
+    },
+    undefined,
+  );
+
+  return latest?.id ?? null;
+}
+
+function statusForEvent(name: string, payload: Record<string, unknown>): LoadedProject["status"] | null {
+  if (name === "run.started") {
+    return "planning";
+  }
+
+  if (name === "step.started") {
+    return payload.role === "leader" ? "planning" : "building";
+  }
+
+  if (name === "run.awaiting_approval") {
+    return "awaiting_approval";
+  }
+
+  if (name === "run.completed") {
+    return "ready";
+  }
+
+  if (name === "step.failed" || name === "run.failed") {
+    return "failed";
+  }
+
+  return null;
+}
+
 export function WorkspaceShell() {
   const [identity, setIdentity] = useState<ProjectIdentity | null>(null);
   const [project, setProject] = useState<LoadedProject | null>(null);
@@ -38,6 +80,11 @@ export function WorkspaceShell() {
   function receiveEvent(name: string, data: unknown) {
     const payload = eventData(data);
     setEvents((current) => [...current, { name, data: payload }]);
+    const nextStatus = statusForEvent(name, payload);
+
+    if (nextStatus) {
+      setProject((current) => current ? { ...current, status: nextStatus } : current);
+    }
 
     if (name === "run.awaiting_approval" && typeof payload.runId === "string") {
       setApprovalRunId(payload.runId);
@@ -51,6 +98,7 @@ export function WorkspaceShell() {
     }
 
     if (name === "run.failed") {
+      setApprovalRunId(null);
       const error = typeof payload.error === "string" ? payload.error : "团队运行失败，请重试。";
       setLoadError(error);
     }
@@ -68,6 +116,7 @@ export function WorkspaceShell() {
         if (!cancelled) {
           setProject(loadedProject);
           setIdentity(readProjectIdentity(window.localStorage));
+          setApprovalRunId(latestAwaitingTeamRunId(loadedProject));
         }
       })
       .catch(() => {
