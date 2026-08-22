@@ -6,6 +6,7 @@ import { POST as startRun } from "@/app/api/projects/[projectId]/runs/route";
 import {
   createProject,
   createRun,
+  getProject,
 } from "@/lib/repository";
 import { prisma } from "@/server/prisma";
 
@@ -124,6 +125,7 @@ describe("realtime run event streams", () => {
 
     expect(response).toBeDefined();
     expect(response?.headers.get("content-type")).toContain("text/event-stream");
+    expect(response?.headers.get("x-accel-buffering")).toBe("no");
     const reader = response!.body!.getReader();
     const earlyEvents = `${await readChunk(reader)}${await readChunk(reader)}`;
 
@@ -168,6 +170,7 @@ describe("realtime run event streams", () => {
 
     expect(response).toBeDefined();
     expect(response?.headers.get("content-type")).toContain("text/event-stream");
+    expect(response?.headers.get("x-accel-buffering")).toBe("no");
     const reader = response!.body!.getReader();
     const earlyEvents = `${await readChunk(reader)}${await readChunk(reader)}`;
 
@@ -181,5 +184,49 @@ describe("realtime run event streams", () => {
     expect(completedEvents).toContain("event: step.completed");
     expect(completedEvents).toContain("event: run.completed");
     await responsePromise;
+  });
+
+  it("continues persisting a team run after its SSE consumer cancels", async () => {
+    const provider = new DelayedFirstResponseProvider();
+    const unhandledRejections: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandledRejection);
+    getAgentProvider.mockReturnValue(provider);
+    const project = await createProject({
+      title: "取消事件流测试",
+      goal: "为摄影师创建预约与报价工具",
+    });
+
+    try {
+      const response = await startRun(
+        new Request(`http://localhost/api/projects/${project.id}/runs`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-project-token": project.ownerToken,
+          },
+          body: JSON.stringify({ mode: "team", request: project.goal }),
+        }),
+        { params: Promise.resolve({ projectId: project.id }) },
+      );
+
+      await provider.waitForFirstGenerate();
+      const reader = response.body!.getReader();
+      expect(await readChunk(reader)).toContain("event: run.started");
+      await reader.cancel();
+      provider.release();
+
+      await vi.waitFor(async () => {
+        const loaded = await getProject(project.id, project.ownerToken);
+
+        expect(loaded.status).toBe("awaiting_approval");
+        expect(loaded.runs[0]).toMatchObject({ status: "awaiting_approval" });
+      });
+      expect(unhandledRejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
   });
 });

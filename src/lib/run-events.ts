@@ -18,10 +18,19 @@ export function streamRunEvents(
   producer: (emit: RunEventEmitter) => Promise<void>,
 ) {
   const encoder = new TextEncoder();
+  let consumerCancelled = false;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const emit: RunEventEmitter = (name, data) => {
-        controller.enqueue(encoder.encode(encodeRunEvent(name, data)));
+        if (consumerCancelled) {
+          return;
+        }
+
+        try {
+          controller.enqueue(encoder.encode(encodeRunEvent(name, data)));
+        } catch {
+          consumerCancelled = true;
+        }
       };
 
       void producer(emit)
@@ -29,8 +38,19 @@ export function streamRunEvents(
           emit("run.failed", { runId, error: "运行失败" });
         })
         .finally(() => {
-          controller.close();
+          if (consumerCancelled) {
+            return;
+          }
+
+          try {
+            controller.close();
+          } catch {
+            consumerCancelled = true;
+          }
         });
+    },
+    cancel() {
+      consumerCancelled = true;
     },
   });
 
@@ -39,6 +59,7 @@ export function streamRunEvents(
       "cache-control": "no-cache, no-transform",
       connection: "keep-alive",
       "content-type": "text/event-stream; charset=utf-8",
+      "x-accel-buffering": "no",
     },
   });
 }
