@@ -44,6 +44,9 @@ function latestAwaitingTeamRunId(project: LoadedProject): string | null {
 }
 
 type RunMode = "team" | "mention" | "iterate";
+type FailedOperation =
+  | { kind: "run"; mode: RunMode; request: string }
+  | { kind: "approve"; runId: string };
 
 function statusForEvent(
   name: string,
@@ -98,6 +101,7 @@ export function WorkspaceShell() {
   const [running, setRunning] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [lastFailedOperation, setLastFailedOperation] = useState<FailedOperation | null>(null);
   const activeGenerationRef = useRef(0);
   const generationRef = useRef(0);
   const runActiveRef = useRef(false);
@@ -178,7 +182,11 @@ export function WorkspaceShell() {
     };
   }, []);
 
-  async function requestPlan(request: string, preserveHistory = false) {
+  async function requestPlan(
+    request: string,
+    preserveHistory = false,
+    retryMode?: RunMode,
+  ) {
     if (!identity || runActiveRef.current || restoreActiveRef.current) {
       return;
     }
@@ -188,15 +196,16 @@ export function WorkspaceShell() {
     runActiveRef.current = true;
     setRunning(true);
     setLoadError(null);
+    setLastFailedOperation(null);
     if (!preserveHistory) {
       setEvents([]);
       setApprovalRunId(null);
     }
-    const mode: RunMode = parseFirstMention(request)
+    const mode: RunMode = retryMode ?? (parseFirstMention(request)
       ? "mention"
       : project?.status === "ready"
         ? "iterate"
-        : "team";
+        : "team");
 
     try {
       await startRun(
@@ -208,6 +217,7 @@ export function WorkspaceShell() {
     } catch (error) {
       if (generation === activeGenerationRef.current) {
         setLoadError(error instanceof Error ? error.message : "制定团队计划失败，请稍后重试。");
+        setLastFailedOperation({ kind: "run", mode, request });
       }
     } finally {
       if (generation === activeGenerationRef.current) {
@@ -217,8 +227,8 @@ export function WorkspaceShell() {
     }
   }
 
-  async function approvePlan() {
-    if (!identity || !approvalRunId || runActiveRef.current || restoreActiveRef.current) {
+  async function approvePlan(runId = approvalRunId) {
+    if (!identity || !runId || runActiveRef.current || restoreActiveRef.current) {
       return;
     }
 
@@ -227,17 +237,19 @@ export function WorkspaceShell() {
     runActiveRef.current = true;
     setRunning(true);
     setLoadError(null);
+    setLastFailedOperation(null);
 
     try {
       await approveRun(
         identity.projectId,
         identity.ownerToken,
-        approvalRunId,
+        runId,
         (name, data) => receiveEvent(generation, "team", name, data),
       );
     } catch (error) {
       if (generation === activeGenerationRef.current) {
         setLoadError(error instanceof Error ? error.message : "开始构建失败，请稍后重试。");
+        setLastFailedOperation({ kind: "approve", runId });
       }
     } finally {
       if (generation === activeGenerationRef.current) {
@@ -245,6 +257,21 @@ export function WorkspaceShell() {
         setRunning(false);
       }
     }
+  }
+
+  function retryLastFailure() {
+    if (!lastFailedOperation) return;
+
+    if (lastFailedOperation.kind === "approve") {
+      void approvePlan(lastFailedOperation.runId);
+      return;
+    }
+
+    void requestPlan(
+      lastFailedOperation.request,
+      true,
+      lastFailedOperation.mode,
+    );
   }
 
   async function restoreSelectedVersion(versionId: string) {
@@ -290,16 +317,19 @@ export function WorkspaceShell() {
       <section aria-label="Agent conversation" className="conversation">
         <ConversationPanel
           awaitingApproval={Boolean(approvalRunId)}
+          canRetry={Boolean(lastFailedOperation)}
           error={loadError}
           events={events}
           loading={!project && !loadError}
           messages={project?.messages ?? []}
-          onApprove={approvePlan}
+          onApprove={() => {
+            void approvePlan();
+          }}
           onRequestPlan={(request) => {
             void requestPlan(request);
           }}
           onRetry={(request) => {
-            void requestPlan(request, true);
+            void retryLastFailure();
           }}
           projectGoal={goal}
           projectTitle={title}

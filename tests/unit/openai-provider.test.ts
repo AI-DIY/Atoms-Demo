@@ -27,7 +27,7 @@ describe("createOpenAIProvider", () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it("uses the role instruction, restricted context, model and structured output", async () => {
+  it("uses the role instruction, restricted context, model and strict JSON Schema output", async () => {
     const client = clientReturning(JSON.stringify({
       summary: "已整理产品范围。",
       artifact: {
@@ -56,11 +56,85 @@ describe("createOpenAIProvider", () => {
       model: "gpt-5.5",
       instructions: expect.stringContaining(getRole("pm").systemInstruction),
       input: JSON.stringify(context),
-      text: { format: { type: "json_object" } },
+      text: {
+        format: expect.objectContaining({
+          type: "json_schema",
+          name: "agent_output",
+          strict: true,
+        }),
+      },
     }));
     expect(output).toMatchObject({
       summary: "已整理产品范围。",
       artifact: { type: "prd", content: { users: ["摄影师"] } },
+    });
+  });
+
+  it("uses strict schemas for the leader plan and engineer app artifacts", async () => {
+    const client: ResponsesClient = {
+      responses: {
+        create: vi.fn()
+          .mockResolvedValueOnce({ output_text: JSON.stringify({
+            summary: "已完成计划。",
+            artifact: {
+              type: "plan",
+              content: { roles: ["pm", "architect", "engineer"], risks: ["需要确认流程"] },
+            },
+          }) })
+          .mockResolvedValueOnce({ output_text: JSON.stringify({
+            summary: "已完成页面。",
+            artifact: {
+              type: "app",
+              content: {
+                title: "预约工具",
+                html: `<!doctype html><html><body>${"x".repeat(100)}</body></html>`,
+              },
+            },
+          }) }),
+      },
+    };
+    const provider = createOpenAIProvider(
+      { baseUrl: "https://models.example/v1", apiKey: "secret", model: "gpt-5.5" },
+      { client },
+    );
+
+    await provider.generate("leader", context);
+    await provider.generate("engineer", context);
+
+    const leaderFormat = vi.mocked(client.responses.create).mock.calls[0]?.[0].text?.format;
+    const engineerFormat = vi.mocked(client.responses.create).mock.calls[1]?.[0].text?.format;
+    expect(leaderFormat).toMatchObject({
+      type: "json_schema",
+      name: "agent_output",
+      strict: true,
+      schema: {
+        additionalProperties: false,
+        required: ["summary", "artifact", "suggestedNextAction"],
+        properties: {
+          suggestedNextAction: { type: ["string", "null"] },
+          artifact: {
+            properties: {
+              type: { enum: ["plan"] },
+              content: { additionalProperties: false, required: ["roles", "risks"] },
+            },
+          },
+        },
+      },
+    });
+    expect(engineerFormat).toMatchObject({
+      type: "json_schema",
+      name: "agent_output",
+      strict: true,
+      schema: {
+        properties: {
+          artifact: {
+            properties: {
+              type: { enum: ["app"] },
+              content: { additionalProperties: false, required: ["title", "html"] },
+            },
+          },
+        },
+      },
     });
   });
 
@@ -96,7 +170,10 @@ describe("createOpenAIProvider", () => {
   it("does not retry an ordinary API failure or expose the API key", async () => {
     const client: ResponsesClient = {
       responses: {
-        create: vi.fn().mockRejectedValue(new Error("request failed with secret")),
+        create: vi.fn().mockRejectedValue(Object.assign(
+          new Error("request failed with secret"),
+          { status: 429 },
+        )),
       },
     };
     const provider = createOpenAIProvider(
@@ -108,7 +185,69 @@ describe("createOpenAIProvider", () => {
     expect(client.responses.create).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects an output with an unexpected artifact type", async () => {
+  it("repairs an invalid structured response exactly once with the same schema", async () => {
+    const client: ResponsesClient = {
+      responses: {
+        create: vi.fn()
+          .mockResolvedValueOnce({ output_text: "not valid JSON" })
+          .mockResolvedValueOnce({ output_text: JSON.stringify({
+            summary: "已完成研究。",
+            artifact: {
+              type: "research",
+              content: { findings: ["需求清晰"], assumptions: ["用户使用移动端"] },
+            },
+          }) }),
+      },
+    };
+    const provider = createOpenAIProvider(
+      { baseUrl: "https://models.example/v1", apiKey: "secret", model: "gpt-5.5" },
+      { client },
+    );
+
+    await expect(provider.generate("research", context)).resolves.toMatchObject({
+      artifact: { type: "research" },
+    });
+    expect(client.responses.create).toHaveBeenCalledTimes(2);
+    expect(client.responses.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      instructions: expect.stringContaining("完整 JSON"),
+      text: { format: expect.objectContaining({ type: "json_schema", strict: true }) },
+    }));
+    expect(JSON.parse(vi.mocked(client.responses.create).mock.calls[1]?.[0].input ?? "{}")).toMatchObject({
+      invalidOutput: "not valid JSON",
+    });
+  });
+
+  it("repairs invalid JSON from the unstructured compatibility fallback without another structured parameter", async () => {
+    const client: ResponsesClient = {
+      responses: {
+        create: vi.fn()
+          .mockRejectedValueOnce(Object.assign(new Error("Unknown parameter: text.format"), { status: 400 }))
+          .mockResolvedValueOnce({ output_text: "not valid JSON" })
+          .mockResolvedValueOnce({ output_text: JSON.stringify({
+            summary: "已完成研究。",
+            artifact: {
+              type: "research",
+              content: { findings: ["需求清晰"], assumptions: ["用户使用移动端"] },
+            },
+          }) }),
+      },
+    };
+    const provider = createOpenAIProvider(
+      { baseUrl: "https://models.example/v1", apiKey: "secret", model: "gpt-5.5" },
+      { client },
+    );
+
+    await expect(provider.generate("research", context)).resolves.toMatchObject({
+      artifact: { type: "research" },
+    });
+    expect(client.responses.create).toHaveBeenCalledTimes(3);
+    expect(client.responses.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      instructions: expect.stringContaining("完整 JSON"),
+    }));
+    expect(client.responses.create).toHaveBeenLastCalledWith(expect.not.objectContaining({ text: expect.anything() }));
+  });
+
+  it("returns a safe error when a repaired output remains invalid", async () => {
     const client = clientReturning(JSON.stringify({
       summary: "错误产物",
       artifact: { type: "app", content: { title: "x", html: "<p>too short</p>" } },
@@ -118,7 +257,8 @@ describe("createOpenAIProvider", () => {
       { client },
     );
 
-    await expect(provider.generate("research", context)).rejects.toThrow("Unexpected artifact type");
+    await expect(provider.generate("research", context)).rejects.toThrow("Model response is invalid after repair");
+    expect(client.responses.create).toHaveBeenCalledTimes(2);
   });
 
   it("rejects an invalid artifact even when its type matches the requested role", async () => {
@@ -131,6 +271,7 @@ describe("createOpenAIProvider", () => {
       { client },
     );
 
-    await expect(provider.generate("research", context)).rejects.toThrow("Invalid research artifact");
+    await expect(provider.generate("research", context)).rejects.toThrow("Model response is invalid after repair");
+    expect(client.responses.create).toHaveBeenCalledTimes(2);
   });
 });

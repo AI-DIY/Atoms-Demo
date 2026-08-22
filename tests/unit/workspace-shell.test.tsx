@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultProject } from "@/lib/default-project";
 import type { LoadedProject } from "@/lib/client-api";
@@ -173,6 +173,73 @@ describe("WorkspaceShell", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("请求过于频繁，请稍后重试。");
     });
     expect(screen.getByText("已有研究结论")).toBeInTheDocument();
+  });
+
+  it("retries a failed run with its original request and preserves existing events", async () => {
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("step.started", { role: "leader" });
+        throw new Error("请求过于频繁，请稍后重试。");
+      },
+    );
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "为摄影师创建预约工具" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenCalledTimes(2);
+      expect(clientApi.startRun).toHaveBeenNthCalledWith(
+        2,
+        "project-1",
+        "owner-token-1",
+        { mode: "team", request: "为摄影师创建预约工具" },
+        expect.any(Function),
+      );
+    });
+    expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("团队负责人")).toHaveLength(2);
+  });
+
+  it("retries a failed approval against the same awaiting run without starting a new plan", async () => {
+    window.localStorage.setItem(
+      projectIdentityStorageKey,
+      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
+    );
+    clientApi.loadProject.mockResolvedValue({
+      ...loadedProject,
+      status: "awaiting_approval",
+      runs: [{ id: "run-retry", mode: "team", status: "awaiting_approval" }],
+      messages: [{ id: "message-1", role: "pm", kind: "assistant", content: "已有计划摘要" }],
+    });
+    clientApi.approveRun.mockRejectedValue(new Error("服务器正忙，请稍后重试。"));
+    render(<WorkspaceShell />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("服务器正忙，请稍后重试。");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => {
+      expect(clientApi.approveRun).toHaveBeenCalledTimes(2);
+      expect(clientApi.approveRun).toHaveBeenNthCalledWith(
+        2,
+        "project-1",
+        "owner-token-1",
+        "run-retry",
+        expect.any(Function),
+      );
+    });
+    expect(clientApi.startRun).not.toHaveBeenCalled();
+    expect(screen.getByText("已有计划摘要")).toBeInTheDocument();
   });
 
   it("在 reviewer 开始验收时更新目标状态", async () => {

@@ -9,11 +9,12 @@ export const teamGenerationGate = new ConcurrencyGate(1);
 export const specialistGenerationGate = new ConcurrencyGate(2);
 
 export function clientIpFromRequest(request: Request): string {
+  const realIp = request.headers.get("x-real-ip")?.trim();
   const forwarded = request.headers.get("x-forwarded-for")
     ?.split(",")[0]
     ?.trim();
 
-  return forwarded || request.headers.get("x-real-ip")?.trim() || "unknown";
+  return realIp || forwarded || "unknown";
 }
 
 export function allowModelStart(request: Request): boolean {

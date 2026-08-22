@@ -44,6 +44,7 @@ export function ConversationPanel({
   projectTitle,
   status,
   awaitingApproval,
+  canRetry = true,
 }: {
   error: string | null;
   events: TimelineEvent[];
@@ -57,6 +58,7 @@ export function ConversationPanel({
   projectTitle: string;
   status: string;
   awaitingApproval: boolean;
+  canRetry?: boolean;
 }) {
   const [request, setRequest] = useState(projectGoal);
 
@@ -105,9 +107,11 @@ export function ConversationPanel({
       {error ? (
         <div className="workspace-error">
           <p role="alert">{error}</p>
-          <button disabled={running} onClick={() => onRetry(request.trim())} type="button">
-            重试
-          </button>
+          {canRetry ? (
+            <button disabled={running} onClick={() => onRetry(request.trim())} type="button">
+              重试
+            </button>
+          ) : null}
         </div>
       ) : null}
 

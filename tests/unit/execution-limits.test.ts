@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { clientIpFromRequest } from "@/lib/execution-limits";
 
 describe("clientIpFromRequest", () => {
-  it("uses the first forwarded address before the real IP fallback", () => {
+  it("uses x-real-ip before the forwarded address supplied by the client", () => {
     const request = new Request("http://localhost", {
       headers: {
         "x-forwarded-for": "198.51.100.8, 10.0.0.1",
@@ -10,7 +10,7 @@ describe("clientIpFromRequest", () => {
       },
     });
 
-    expect(clientIpFromRequest(request)).toBe("198.51.100.8");
+    expect(clientIpFromRequest(request)).toBe("198.51.100.9");
   });
 
   it("uses x-real-ip or unknown when forwarded headers are absent", () => {
