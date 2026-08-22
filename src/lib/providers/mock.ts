@@ -1,0 +1,186 @@
+import type { AgentContext, AgentOutput, AgentProvider } from "@/lib/provider";
+import type { RoleId } from "@/lib/domain";
+
+const bookingAppHtml = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>摄影预约工作台</title>
+  <style>
+    :root { color: #1e293b; background: #f8fafc; font-family: system-ui, sans-serif; }
+    body { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { margin: 0 0 8px; } p { color: #475569; }
+    form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 12px; margin: 28px 0; }
+    input, button { box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; min-height: 40px; padding: 8px 10px; font: inherit; }
+    button { cursor: pointer; background: #0f766e; border-color: #0f766e; color: #fff; font-weight: 650; }
+    #appointments { display: grid; gap: 10px; padding: 0; list-style: none; }
+    .appointment { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; }
+    .appointment button { min-height: 32px; background: #fff; color: #b91c1c; border-color: #fecaca; }
+    @media (max-width: 680px) { form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>摄影预约工作台</h1>
+    <p>集中安排拍摄时间，快速跟进客户需求。</p>
+  </header>
+  <form id="appointment-form">
+    <input id="client" aria-label="客户姓名" required placeholder="客户姓名">
+    <input id="date" aria-label="预约日期" required type="date">
+    <input id="service" aria-label="拍摄服务" required placeholder="拍摄服务">
+    <button type="submit">添加预约</button>
+  </form>
+  <main>
+    <h2>预约列表</h2>
+    <ul id="appointments" aria-live="polite"></ul>
+  </main>
+  <script>
+    const form = document.querySelector('#appointment-form');
+    const list = document.querySelector('#appointments');
+    const client = document.querySelector('#client');
+    const date = document.querySelector('#date');
+    const service = document.querySelector('#service');
+
+    function addAppointment(name, bookingDate, bookingService) {
+      const item = document.createElement('li');
+      item.className = 'appointment';
+      const details = document.createElement('span');
+      details.textContent = name + ' · ' + bookingDate + ' · ' + bookingService;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '删除预约';
+      remove.addEventListener('click', () => item.remove());
+      item.append(details, remove);
+      list.append(item);
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      addAppointment(client.value.trim(), date.value, service.value.trim());
+      form.reset();
+      client.focus();
+    });
+  </script>
+</body>
+</html>`;
+
+function projectName(context: AgentContext) {
+  return context.goal.trim() || "你的产品";
+}
+
+export class MockProvider implements AgentProvider {
+  async generate(role: RoleId, context: AgentContext): Promise<AgentOutput> {
+    const goal = projectName(context);
+
+    switch (role) {
+      case "leader":
+        return {
+          summary: `已为“${goal}”规划默认交付团队。`,
+          artifact: {
+            type: "plan",
+            content: {
+              roles: ["pm", "architect", "engineer"],
+              risks: [
+                "需求范围可能超过单文件应用的交付边界",
+                "预约数据仅在当前浏览器会话中保存",
+                "需要人工确认核心业务流程后再开始构建",
+              ],
+            },
+          },
+          suggestedNextAction: "审批团队计划后开始构建",
+        };
+      case "pm":
+        return {
+          summary: `已为“${goal}”整理产品需求与验收条件。`,
+          artifact: {
+            type: "prd",
+            content: {
+              users: ["独立摄影师", "需要预约拍摄的客户"],
+              scope: ["创建预约", "查看预约列表", "删除不再需要的预约"],
+              flow: ["填写客户、日期和服务", "添加预约", "在列表中管理预约"],
+              acceptance: [
+                "用户可以添加包含客户、日期和服务的预约",
+                "用户可以删除任意一条预约",
+                "页面在桌面和移动屏幕可用",
+              ],
+            },
+          },
+          suggestedNextAction: "由架构师定义页面和状态边界",
+        };
+      case "architect":
+        return {
+          summary: "已确定单文件预约工具的页面结构和浏览器状态。",
+          artifact: {
+            type: "architecture",
+            content: {
+              pages: ["预约工作台（单页）"],
+              state: ["预约列表", "表单中的客户、日期和服务字段"],
+              constraints: [
+                "使用原生 HTML、CSS 和 JavaScript",
+                "不使用外部依赖或网络请求",
+                "生成文档小于 50 KB",
+              ],
+            },
+          },
+          suggestedNextAction: "由工程师生成可交互的单文件网页",
+        };
+      case "engineer":
+        return {
+          summary: "已生成可添加和删除预约的独立网页应用。",
+          artifact: {
+            type: "app",
+            content: {
+              title: "摄影预约工作台",
+              html: bookingAppHtml,
+            },
+          },
+          suggestedNextAction: "在预览中测试添加和删除预约",
+        };
+      case "research":
+        return {
+          summary: `已整理“${goal}”的初步研究假设。`,
+          artifact: {
+            type: "research",
+            content: {
+              findings: ["摄影师需要减少跨渠道确认预约的沟通成本"],
+              assumptions: ["客户愿意在线提交基础预约信息"],
+            },
+          },
+        };
+      case "data":
+        return {
+          summary: "已定义预约工具的基础衡量指标。",
+          artifact: {
+            type: "analysis",
+            content: {
+              metrics: ["预约创建数", "预约取消数", "预约完成率"],
+              questions: ["哪些服务类型带来最多预约"],
+            },
+          },
+        };
+      case "seo":
+        return {
+          summary: "已给出摄影预约服务的搜索内容建议。",
+          artifact: {
+            type: "seo",
+            content: {
+              keywords: ["摄影预约", "写真预约", "摄影报价"],
+              recommendations: ["为各类拍摄服务提供独立的说明页"],
+            },
+          },
+        };
+      case "growth":
+        return {
+          summary: "已提出首轮获客和转化实验。",
+          artifact: {
+            type: "growth",
+            content: {
+              experiments: ["在预约成功页提供转介绍优惠", "测试不同服务套餐的默认展示顺序"],
+              successMetric: "每周有效预约数",
+            },
+          },
+        };
+    }
+  }
+}
