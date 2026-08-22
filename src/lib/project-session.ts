@@ -1,19 +1,60 @@
-import type {
-  CreatedProject,
-  LoadedProject,
-  ProjectIdentity,
-  ProjectInput,
+import {
+  ApiError,
+  type CreatedProject,
+  type LoadedProject,
+  type ProjectIdentity,
+  type ProjectInput,
 } from "./client-api";
 
 export const projectIdentityStorageKey = "agent-studio-owner-token";
+
+const inFlightProjectRestores = new WeakMap<
+  Storage,
+  Map<string, Promise<LoadedProject>>
+>();
 
 export type ProjectApi = {
   createProject(input: ProjectInput): Promise<CreatedProject>;
   loadProject(identity: ProjectIdentity): Promise<LoadedProject>;
 };
 
+function safelyRead(storage: Storage, key: string): string | null {
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safelyWrite(storage: Storage, key: string, value: string) {
+  try {
+    storage.setItem(key, value);
+  } catch {
+    // A blocked browser storage area should not prevent a temporary session.
+  }
+}
+
+function safelyRemove(storage: Storage, key: string) {
+  try {
+    storage.removeItem(key);
+  } catch {
+    // The recovery request can still create a usable in-memory project session.
+  }
+}
+
+function getInFlightRestores(storage: Storage) {
+  let restores = inFlightProjectRestores.get(storage);
+
+  if (!restores) {
+    restores = new Map();
+    inFlightProjectRestores.set(storage, restores);
+  }
+
+  return restores;
+}
+
 export function readProjectIdentity(storage: Storage): ProjectIdentity | null {
-  const rawIdentity = storage.getItem(projectIdentityStorageKey);
+  const rawIdentity = safelyRead(storage, projectIdentityStorageKey);
 
   if (!rawIdentity) {
     return null;
@@ -37,7 +78,20 @@ export function readProjectIdentity(storage: Storage): ProjectIdentity | null {
   return null;
 }
 
-export async function restoreOrCreateProject({
+async function createAndLoadProject(
+  storage: Storage,
+  api: ProjectApi,
+  defaultProject: ProjectInput,
+) {
+  const created = await api.createProject(defaultProject);
+  const identity = { projectId: created.id, ownerToken: created.ownerToken };
+
+  safelyWrite(storage, projectIdentityStorageKey, JSON.stringify(identity));
+
+  return api.loadProject(identity);
+}
+
+async function restoreOrCreateProjectInternal({
   storage,
   api,
   defaultProject,
@@ -49,13 +103,48 @@ export async function restoreOrCreateProject({
   const storedIdentity = readProjectIdentity(storage);
 
   if (storedIdentity) {
-    return api.loadProject(storedIdentity);
+    try {
+      return await api.loadProject(storedIdentity);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        safelyRemove(storage, projectIdentityStorageKey);
+        return createAndLoadProject(storage, api, defaultProject);
+      }
+
+      throw error;
+    }
   }
 
-  const created = await api.createProject(defaultProject);
-  const identity = { projectId: created.id, ownerToken: created.ownerToken };
+  return createAndLoadProject(storage, api, defaultProject);
+}
 
-  storage.setItem(projectIdentityStorageKey, JSON.stringify(identity));
+export function restoreOrCreateProject({
+  storage,
+  api,
+  defaultProject,
+}: {
+  storage: Storage;
+  api: ProjectApi;
+  defaultProject: ProjectInput;
+}): Promise<LoadedProject> {
+  const restores = getInFlightRestores(storage);
+  const existing = restores.get(projectIdentityStorageKey);
 
-  return api.loadProject(identity);
+  if (existing) {
+    return existing;
+  }
+
+  const restoring = restoreOrCreateProjectInternal({ storage, api, defaultProject });
+  const settled = restoring.finally(() => {
+    if (restores.get(projectIdentityStorageKey) === settled) {
+      restores.delete(projectIdentityStorageKey);
+      if (restores.size === 0) {
+        inFlightProjectRestores.delete(storage);
+      }
+    }
+  });
+
+  restores.set(projectIdentityStorageKey, settled);
+
+  return settled;
 }

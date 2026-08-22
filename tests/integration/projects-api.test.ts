@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { POST } from "@/app/api/projects/route";
 import { GET } from "@/app/api/projects/[projectId]/route";
-import { createProjectInput } from "@/lib/project-input";
+import { createProjectInput, maxProjectRequestBytes } from "@/lib/project-input";
 import { prisma } from "@/server/prisma";
 
 const projectInput = {
@@ -53,6 +53,22 @@ describe("projects API", () => {
       goal: "为摄影师创建可安排时段与跟进报价的预约工具。",
       status: "draft",
     });
+  });
+
+  it("rejects a project request whose declared content length exceeds the safety limit", async () => {
+    const response = await POST(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(maxProjectRequestBytes + 1),
+        },
+        body: JSON.stringify(projectInput),
+      }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Request body too large" });
   });
 
   it("loads a project for its owner without exposing the owner token", async () => {

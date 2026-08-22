@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createProject, loadProject } from "@/lib/client-api";
+import { ApiError, createProject, loadProject } from "@/lib/client-api";
 
 describe("client project API", () => {
   it("sends the owner token only when loading a project", async () => {
@@ -53,5 +53,22 @@ describe("client project API", () => {
     expect(fetcher).toHaveBeenNthCalledWith(2, "/api/projects/project-1", {
       headers: { "x-project-token": "owner-token-1" },
     });
+  });
+
+  it("preserves the HTTP status in an API error", async () => {
+    const fetcher = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response("Project not found", { status: 404 })),
+    );
+
+    await expect(
+      loadProject({ projectId: "missing", ownerToken: "owner-token" }, fetcher),
+    ).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      message: "Project not found",
+    });
+    await expect(
+      loadProject({ projectId: "missing", ownerToken: "owner-token" }, fetcher),
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });

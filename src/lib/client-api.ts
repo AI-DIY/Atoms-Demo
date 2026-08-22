@@ -25,10 +25,23 @@ export type Fetcher = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail || `Request failed with status ${response.status}`);
+    throw new ApiError(
+      response.status,
+      detail || `Request failed with status ${response.status}`,
+    );
   }
 
   return response.json() as Promise<T>;

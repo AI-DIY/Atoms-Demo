@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
-import { createProjectInput } from "@/lib/project-input";
+import { createProjectInput, maxProjectRequestBytes } from "@/lib/project-input";
 import { createProject } from "@/lib/repository";
 
 export async function POST(request: Request) {
+  const contentLength = Number(request.headers.get("content-length"));
+
+  if (Number.isFinite(contentLength) && contentLength > maxProjectRequestBytes) {
+    return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+  }
+
   let body: unknown;
 
   try {
