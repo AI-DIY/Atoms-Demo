@@ -334,6 +334,55 @@ describe("WorkspaceShell", () => {
     expect(screen.getByText("已有计划摘要")).toBeInTheDocument();
   });
 
+  it("retries an immediately failed approval with the pending team request before refresh returns", async () => {
+    const refresh = deferred<LoadedProject>();
+    const teamRequest = "为婚礼摄影师创建客户接待与报价跟进流程";
+    clientApi.loadProject
+      .mockResolvedValueOnce(loadedProject)
+      .mockReturnValueOnce(refresh.promise);
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.awaiting_approval", { runId: "pending-run" });
+      },
+    );
+    clientApi.approveRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _runId: string,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.failed", { error: "构建服务不可用" });
+      },
+    );
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: teamRequest } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("构建服务不可用");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenNthCalledWith(
+        2,
+        "project-1",
+        "owner-token-1",
+        { mode: "team", request: teamRequest },
+        expect.any(Function),
+      );
+    });
+  });
+
   it("在 reviewer 开始验收时更新目标状态", async () => {
     clientApi.startRun.mockImplementation(
       async (

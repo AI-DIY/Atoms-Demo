@@ -118,6 +118,7 @@ export function WorkspaceShell() {
   const [project, setProject] = useState<LoadedProject | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
+  const [pendingApprovalRequest, setPendingApprovalRequest] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -127,12 +128,26 @@ export function WorkspaceShell() {
   const generationRef = useRef(0);
   const runActiveRef = useRef(false);
   const restoreActiveRef = useRef(false);
+  const pendingApprovalRequestRef = useRef<string | null>(null);
+
+  function setPendingApproval(runId: string | null, request: string | null) {
+    setApprovalRunId(runId);
+    pendingApprovalRequestRef.current = request;
+    setPendingApprovalRequest(request);
+  }
 
   async function refreshProject(activeIdentity: ProjectIdentity, generation: number) {
     const refreshed = await loadProject(activeIdentity);
 
     if (generation === activeGenerationRef.current) {
       setProject(refreshed);
+      const runId = latestAwaitingTeamRunId(refreshed);
+
+      if (runId) {
+        const request = storedPlanGoal(refreshed, runId);
+        pendingApprovalRequestRef.current = request;
+        setPendingApprovalRequest(request);
+      }
     }
   }
 
@@ -156,11 +171,14 @@ export function WorkspaceShell() {
     }
 
     if (name === "run.awaiting_approval" && typeof payload.runId === "string") {
-      setApprovalRunId(payload.runId);
+      const request = failedOperation?.kind === "run" && failedOperation.mode === "team"
+        ? failedOperation.request
+        : storedPlanGoal(project, payload.runId);
+      setPendingApproval(payload.runId, request);
     }
 
     if (name === "run.completed") {
-      setApprovalRunId(null);
+      setPendingApproval(null, null);
     }
 
     if ((name === "run.awaiting_approval" || name === "run.completed") && identity) {
@@ -172,7 +190,7 @@ export function WorkspaceShell() {
     }
 
     if (name === "run.failed") {
-      setApprovalRunId(null);
+      setPendingApproval(null, null);
       const error = typeof payload.error === "string" ? payload.error : "团队运行失败，请重试。";
       setLoadError(error);
       if (failedOperation?.kind === "approve") {
@@ -199,7 +217,8 @@ export function WorkspaceShell() {
         if (!cancelled) {
           setProject(loadedProject);
           setIdentity(readProjectIdentity(window.localStorage));
-          setApprovalRunId(latestAwaitingTeamRunId(loadedProject));
+          const runId = latestAwaitingTeamRunId(loadedProject);
+          setPendingApproval(runId, runId ? storedPlanGoal(loadedProject, runId) : null);
         }
       })
       .catch(() => {
@@ -228,9 +247,9 @@ export function WorkspaceShell() {
     setRunning(true);
     setLoadError(null);
     setLastFailedOperation(null);
+    setPendingApproval(null, null);
     if (!preserveHistory) {
       setEvents([]);
-      setApprovalRunId(null);
     }
     const mode: RunMode = retryMode ?? (parseFirstMention(request)
       ? "mention"
@@ -270,6 +289,8 @@ export function WorkspaceShell() {
     }
 
     const request = capturedRequest
+      ?? pendingApprovalRequestRef.current
+      ?? pendingApprovalRequest
       ?? storedPlanGoal(project, runId)
       ?? project?.goal
       ?? defaultProject.goal;
