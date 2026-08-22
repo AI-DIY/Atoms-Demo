@@ -3,6 +3,7 @@
 import { ArrowUp, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import type { ProjectMessage } from "@/lib/client-api";
+import { roles } from "@/lib/roles";
 import { AgentTimeline, type TimelineEvent } from "./AgentTimeline";
 import { PlanApprovalCard } from "./PlanApprovalCard";
 
@@ -29,6 +30,21 @@ function messageRoleLabel(role: string) {
   if (role === "user") return "你";
   if (role === "system") return "系统";
   return "专家";
+}
+
+function mentionCandidates(request: string) {
+  const match = request.match(/(?:^|\s)@([^\s，,。.!！?？]*)$/u);
+
+  if (!match) {
+    return [];
+  }
+
+  const query = match[1].toLocaleLowerCase();
+
+  return roles.filter((role) =>
+    role.label.toLocaleLowerCase().startsWith(query)
+    || role.aliases.some((alias) => alias.toLocaleLowerCase().startsWith(query)),
+  );
 }
 
 export function ConversationPanel({
@@ -60,11 +76,17 @@ export function ConversationPanel({
   awaitingApproval: boolean;
   canRetry?: boolean;
 }) {
-  const [request, setRequest] = useState(projectGoal);
+  const [request, setRequest] = useState<string | null>(null);
+  const activeRequest = request ?? projectGoal;
+  const candidates = mentionCandidates(activeRequest);
+
+  function selectMention(roleLabel: string) {
+    setRequest(activeRequest.replace(/@[^\s，,。.!！?？]*$/u, `@${roleLabel} `));
+  }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextRequest = request.trim();
+    const nextRequest = activeRequest.trim();
 
     if (nextRequest) {
       onRequestPlan(nextRequest);
@@ -108,7 +130,7 @@ export function ConversationPanel({
         <div className="workspace-error">
           <p role="alert">{error}</p>
           {canRetry ? (
-            <button disabled={running} onClick={() => onRetry(request.trim())} type="button">
+            <button disabled={running} onClick={() => onRetry(activeRequest.trim())} type="button">
               重试
             </button>
           ) : null}
@@ -138,12 +160,28 @@ export function ConversationPanel({
 
       <form className="composer" onSubmit={submit}>
         <div className="composer-box">
+          {candidates.length > 0 ? (
+            <div aria-label="@ 专家建议" className="mention-menu" role="listbox">
+              {candidates.map((role) => (
+                <button
+                  aria-label={`@${role.label}`}
+                  key={role.id}
+                  onClick={() => selectMention(role.label)}
+                  role="option"
+                  type="button"
+                >
+                  <strong>@{role.label}</strong>
+                  <span>{role.aliases[0]}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <textarea
             aria-label="描述你要构建的产品"
             onChange={(event) => setRequest(event.target.value)}
             placeholder="描述你要构建的产品"
             rows={2}
-            value={request}
+            value={activeRequest}
           />
           <button
             className="send-button"

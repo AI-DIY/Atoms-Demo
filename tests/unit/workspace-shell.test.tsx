@@ -82,6 +82,49 @@ describe("WorkspaceShell", () => {
       projectId: "project-1",
       ownerToken: "owner-token-1",
     });
+    expect(screen.getByRole("textbox", { name: "描述你要构建的产品" }))
+      .toHaveValue(defaultProject.goal);
+  });
+
+  it("creates a named project and switches the active workspace", async () => {
+    const input = {
+      title: "婚礼摄影管家",
+      goal: "为婚礼摄影团队统一安排档期、报价与客户跟进。",
+    };
+    const created = { id: "project-2", ownerToken: "owner-token-2", status: "draft", ...input };
+    const loaded: LoadedProject = {
+      id: "project-2",
+      status: "draft",
+      currentVersion: 0,
+      runs: [],
+      versions: [],
+      ...input,
+    };
+    clientApi.createProject.mockResolvedValueOnce(createdProject).mockResolvedValueOnce(created);
+    clientApi.loadProject.mockResolvedValueOnce(loadedProject).mockResolvedValueOnce(loaded);
+
+    render(<WorkspaceShell />);
+
+    await screen.findByRole("heading", { name: defaultProject.title });
+    fireEvent.click(screen.getByRole("button", { name: "新建项目" }));
+
+    const dialog = screen.getByRole("dialog", { name: "新建项目" });
+    fireEvent.change(within(dialog).getByLabelText("项目名称"), { target: { value: input.title } });
+    fireEvent.change(within(dialog).getByLabelText("项目目标"), { target: { value: input.goal } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+
+    await waitFor(() => {
+      expect(clientApi.createProject).toHaveBeenLastCalledWith(input);
+      expect(clientApi.loadProject).toHaveBeenLastCalledWith({
+        projectId: "project-2",
+        ownerToken: "owner-token-2",
+      });
+    });
+    expect(await screen.findByRole("heading", { name: input.title })).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem(projectIdentityStorageKey) ?? "{}")).toEqual({
+      projectId: "project-2",
+      ownerToken: "owner-token-2",
+    });
   });
 
   it("reuses a stored identity by loading instead of creating", async () => {

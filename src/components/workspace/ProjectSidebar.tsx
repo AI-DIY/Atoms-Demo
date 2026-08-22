@@ -27,7 +27,17 @@ const artifactDescriptions: Record<ArtifactType, string> = {
   growth: "实验与触达",
 };
 
-export function ProjectSidebar({ loading, title }: { loading: boolean; title: string }) {
+export function ProjectSidebar({
+  creating = false,
+  loading,
+  onCreate = () => undefined,
+  title,
+}: {
+  creating?: boolean;
+  loading: boolean;
+  onCreate?: () => void;
+  title: string;
+}) {
   return (
     <div className="sidebar">
       <div className="brand">
@@ -38,7 +48,7 @@ export function ProjectSidebar({ loading, title }: { loading: boolean; title: st
         </div>
       </div>
 
-      <button className="project-button" type="button">
+      <button className="project-button" disabled={creating} onClick={onCreate} type="button">
         <Plus size={15} aria-hidden />
         新建项目
       </button>

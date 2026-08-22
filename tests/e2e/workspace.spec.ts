@@ -28,7 +28,8 @@ test("builds a booking app through approval and preserves a specialist response"
   const completedEvents = page
     .getByRole("region", { name: "智能体运行时间线" })
     .getByText("已完成", { exact: true });
-  await request.fill("@研究员 调研摄影师预约转化的主要阻碍");
+  await request.fill("@研");
+  await page.getByRole("option", { name: "@研究员" }).click();
   await page.getByRole("button", { name: "制定团队计划" }).click();
   await expect(page.getByText(/已整理.*初步研究假设。/)).toBeVisible();
   await expect(completedEvents).toHaveCount(2);

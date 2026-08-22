@@ -77,4 +77,34 @@ describe("ConversationPanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("服务器正忙，请稍后重试。");
     expect(onRetry).toHaveBeenCalledWith("改为支持报价跟进");
   });
+
+  it("offers matching experts after an @ and inserts the selected mention", () => {
+    const onRequestPlan = vi.fn();
+    render(
+      <ConversationPanel
+        awaitingApproval={false}
+        error={null}
+        events={[]}
+        loading={false}
+        messages={[]}
+        onApprove={vi.fn()}
+        onRequestPlan={onRequestPlan}
+        onRetry={vi.fn()}
+        projectGoal="为摄影师创建预约工具"
+        projectTitle="摄影预约助手"
+        running={false}
+        status="draft"
+      />,
+    );
+
+    const request = screen.getByRole("textbox", { name: "描述你要构建的产品" });
+    fireEvent.change(request, { target: { value: "@研" } });
+
+    fireEvent.click(screen.getByRole("option", { name: "@研究员" }));
+    expect(request).toHaveValue("@研究员 ");
+
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    expect(onRequestPlan).toHaveBeenCalledWith("@研究员");
+  });
+
 });

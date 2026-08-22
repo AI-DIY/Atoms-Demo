@@ -9,14 +9,17 @@ import {
   startRun,
   type LoadedProject,
   type ProjectIdentity,
+  type ProjectInput,
 } from "@/lib/client-api";
 import { defaultProject } from "@/lib/default-project";
 import {
   readProjectIdentity,
+  projectIdentityStorageKey,
   restoreOrCreateProject,
 } from "@/lib/project-session";
 import { parseFirstMention } from "@/lib/mention";
 import { ConversationPanel } from "./ConversationPanel";
+import { NewProjectDialog } from "./NewProjectDialog";
 import { PreviewPanel } from "./PreviewPanel";
 import { ProjectSidebar } from "./ProjectSidebar";
 import type { TimelineEvent } from "./AgentTimeline";
@@ -124,6 +127,9 @@ export function WorkspaceShell() {
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [lastFailedOperation, setLastFailedOperation] = useState<FailedOperation | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const activeGenerationRef = useRef(0);
   const generationRef = useRef(0);
   const runActiveRef = useRef(false);
@@ -343,6 +349,45 @@ export function WorkspaceShell() {
     );
   }
 
+  async function createNewProject(input: ProjectInput) {
+    if (creatingProject || runActiveRef.current || restoreActiveRef.current) {
+      return;
+    }
+
+    const generation = ++generationRef.current;
+    activeGenerationRef.current = generation;
+    setCreatingProject(true);
+    setCreateError(null);
+
+    try {
+      const created = await createProject(input);
+      const nextIdentity = { projectId: created.id, ownerToken: created.ownerToken };
+      const nextProject = await loadProject(nextIdentity);
+
+      if (generation !== activeGenerationRef.current) {
+        return;
+      }
+
+      window.localStorage.setItem(projectIdentityStorageKey, JSON.stringify(nextIdentity));
+      setIdentity(nextIdentity);
+      setProject(nextProject);
+      setEvents([]);
+      setPendingApproval(null, null);
+      setLoadError(null);
+      setRestoreError(null);
+      setLastFailedOperation(null);
+      setCreateDialogOpen(false);
+    } catch (error) {
+      if (generation === activeGenerationRef.current) {
+        setCreateError(error instanceof Error ? error.message : "创建项目失败，请稍后重试。");
+      }
+    } finally {
+      if (generation === activeGenerationRef.current) {
+        setCreatingProject(false);
+      }
+    }
+  }
+
   async function restoreSelectedVersion(versionId: string) {
     if (!identity || runActiveRef.current || restoreActiveRef.current) {
       return;
@@ -379,9 +424,18 @@ export function WorkspaceShell() {
   const goal = project?.goal ?? "正在获取项目目标，请稍候。";
 
   return (
-    <main className="workspace">
+    <>
+      <main className="workspace">
       <aside aria-label="Projects" className="sidebar">
-        <ProjectSidebar loading={!project && !loadError} title={title} />
+        <ProjectSidebar
+          creating={creatingProject || running || restoring}
+          loading={!project && !loadError}
+          onCreate={() => {
+            setCreateError(null);
+            setCreateDialogOpen(true);
+          }}
+          title={title}
+        />
       </aside>
       <section aria-label="Agent conversation" className="conversation">
         <ConversationPanel
@@ -416,6 +470,17 @@ export function WorkspaceShell() {
           versions={project?.versions ?? []}
         />
       </section>
-    </main>
+      </main>
+      {createDialogOpen ? (
+        <NewProjectDialog
+          creating={creatingProject}
+          error={createError}
+          onCancel={() => setCreateDialogOpen(false)}
+          onCreate={(input) => {
+            void createNewProject(input);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
