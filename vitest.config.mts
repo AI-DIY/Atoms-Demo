@@ -10,6 +10,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: "file:./test.db",
     },
+    fileParallelism: false,
     globalSetup: ["./tests/global-setup.ts"],
     setupFiles: ["./vitest.setup.ts"],
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
