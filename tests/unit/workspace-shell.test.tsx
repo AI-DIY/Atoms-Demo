@@ -458,4 +458,41 @@ describe("WorkspaceShell", () => {
       );
     });
   });
+
+  it("blocks new runs while restoring and releases the restore guard afterwards", async () => {
+    const firstRestore = deferred<{ project: LoadedProject }>();
+    const secondRestore = deferred<{ project: LoadedProject }>();
+    const restoredV1: LoadedProject = {
+      ...loadedProject,
+      status: "ready",
+      currentVersion: 1,
+      versions: [
+        { id: "version-1", version: 1, title: "首版", html: "<h1>首版</h1>" },
+        { id: "version-2", version: 2, title: "第二版", html: "<h1>第二版</h1>" },
+      ],
+    };
+    clientApi.loadProject.mockResolvedValue({ ...restoredV1, currentVersion: 2 });
+    clientApi.restoreVersion
+      .mockReturnValueOnce(firstRestore.promise)
+      .mockReturnValueOnce(secondRestore.promise);
+    render(<WorkspaceShell />);
+
+    await screen.findByTitle("Generated application");
+    fireEvent.click(screen.getByRole("button", { name: "版本" }));
+    fireEvent.click(screen.getByRole("button", { name: "V1" }));
+
+    const submit = screen.getByRole("button", { name: "制定团队计划" });
+    await waitFor(() => expect(submit).toBeDisabled());
+    fireEvent.click(submit);
+    expect(clientApi.startRun).not.toHaveBeenCalled();
+
+    firstRestore.resolve({ project: restoredV1 });
+    await waitFor(() => expect(submit).not.toBeDisabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "版本" }));
+    fireEvent.click(screen.getByRole("button", { name: "V2" }));
+    await waitFor(() => expect(clientApi.restoreVersion).toHaveBeenCalledTimes(2));
+
+    secondRestore.resolve({ project: { ...restoredV1, currentVersion: 2 } });
+  });
 });

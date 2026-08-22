@@ -300,31 +300,33 @@ export async function restoreVersion(
   ownerToken: string,
   versionId: string,
 ) {
-  await requireOwnedProject(projectId, ownerToken);
+  return withProjectVersionLock(projectId, async () => {
+    await requireOwnedProject(projectId, ownerToken);
 
-  return prisma.$transaction(async (transaction) => {
-    const version = await transaction.appVersion.findFirst({
-      where: { id: versionId, projectId },
+    return prisma.$transaction(async (transaction) => {
+      const version = await transaction.appVersion.findFirst({
+        where: { id: versionId, projectId },
+      });
+
+      if (!version) {
+        throw new Error("Version not found");
+      }
+
+      await transaction.project.update({
+        where: { id: projectId },
+        data: { currentVersion: version.version },
+      });
+      await transaction.message.create({
+        data: {
+          projectId,
+          role: "system",
+          kind: "system",
+          content: `Restored version V${version.version}`,
+        },
+      });
+
+      return version;
     });
-
-    if (!version) {
-      throw new Error("Version not found");
-    }
-
-    await transaction.project.update({
-      where: { id: projectId },
-      data: { currentVersion: version.version },
-    });
-    await transaction.message.create({
-      data: {
-        projectId,
-        role: "system",
-        kind: "system",
-        content: `Restored version V${version.version}`,
-      },
-    });
-
-    return version;
   });
 }
 

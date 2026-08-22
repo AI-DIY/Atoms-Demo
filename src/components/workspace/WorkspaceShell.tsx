@@ -176,7 +176,7 @@ export function WorkspaceShell() {
   }, []);
 
   async function requestPlan(request: string) {
-    if (!identity || runActiveRef.current) {
+    if (!identity || runActiveRef.current || restoreActiveRef.current) {
       return;
     }
 
@@ -213,7 +213,7 @@ export function WorkspaceShell() {
   }
 
   async function approvePlan() {
-    if (!identity || !approvalRunId || runActiveRef.current) {
+    if (!identity || !approvalRunId || runActiveRef.current || restoreActiveRef.current) {
       return;
     }
 
@@ -269,10 +269,8 @@ export function WorkspaceShell() {
         setRestoreError(`恢复版本失败：${message}`);
       }
     } finally {
-      if (generation === activeGenerationRef.current) {
-        restoreActiveRef.current = false;
-        setRestoring(false);
-      }
+      restoreActiveRef.current = false;
+      setRestoring(false);
     }
   }
 
@@ -290,11 +288,12 @@ export function WorkspaceShell() {
           error={loadError}
           events={events}
           loading={!project && !loadError}
+          messages={project?.messages ?? []}
           onApprove={approvePlan}
           onRequestPlan={requestPlan}
           projectGoal={goal}
           projectTitle={title}
-          running={running}
+          running={running || restoring}
           status={project?.status ?? "加载中"}
         />
       </section>

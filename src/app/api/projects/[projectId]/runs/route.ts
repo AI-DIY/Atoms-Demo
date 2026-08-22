@@ -175,6 +175,12 @@ export async function POST(request: Request, { params }: RouteContext) {
     mode: input.data.mode,
     status: input.data.mode === "team" ? "planning" : "running",
   });
+  await appendMessage(projectId, ownerToken, {
+    role: "user",
+    kind: "user",
+    content: input.data.request,
+    mention: mentionedRole ?? undefined,
+  });
   const events = [encodeRunEvent("run.started", { runId: run.id, mode: run.mode })];
 
   if (input.data.mode === "mention") {

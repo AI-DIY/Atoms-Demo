@@ -160,6 +160,19 @@ describe("persistent run events", () => {
     expect(loaded.versions).toHaveLength(1);
     expect(loaded.runs[0]).toMatchObject({ mode: "mention", status: "completed" });
     expect(loaded.runs[0]?.steps.map((step) => step.role)).toEqual(["research"]);
+    expect(loaded.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "user",
+        kind: "user",
+        content: "@研究员 请分析目标用户",
+        mention: "research",
+      }),
+      expect.objectContaining({
+        role: "research",
+        kind: "assistant",
+        content: "已整理“为摄影师创建预约与报价工具”的初步研究假设。",
+      }),
+    ]));
   });
 
   it("iterates a ready app by calling only Engineer and creating V2", async () => {

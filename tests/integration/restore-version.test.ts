@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   chooseCurrentVersion,
   createProject,
@@ -143,5 +143,61 @@ describe("version restoration", () => {
     await expect(wrongToken.json()).resolves.toEqual({ error: "Project not found" });
     expect(unknownVersion.status).toBe(404);
     await expect(unknownVersion.json()).resolves.toEqual({ error: "Version not found" });
+  });
+
+  it("serializes a restore behind an already-started version creation", async () => {
+    const project = await createProject({
+      title: "版本串行化测试",
+      goal: "同一项目的恢复与创建必须按调用顺序完成",
+    });
+    const first = await createVersion(project.id, project.ownerToken, {
+      title: "首版",
+      html: "<!doctype html><html><body>first version</body></html>",
+    });
+    await createVersion(project.id, project.ownerToken, {
+      title: "第二版",
+      html: "<!doctype html><html><body>second version</body></html>",
+    });
+
+    let releaseTransaction!: () => void;
+    const transactionGate = new Promise<void>((resolve) => {
+      releaseTransaction = resolve;
+    });
+    let markTransactionStarted!: () => void;
+    const transactionStarted = new Promise<void>((resolve) => {
+      markTransactionStarted = resolve;
+    });
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    let firstTransaction = true;
+    const transactionSpy = vi.spyOn(prisma, "$transaction").mockImplementation(
+      (async (callback: unknown) => {
+        if (firstTransaction) {
+          firstTransaction = false;
+          markTransactionStarted();
+          await transactionGate;
+        }
+
+        return (originalTransaction as (value: unknown) => Promise<unknown>)(callback);
+      }) as typeof prisma.$transaction,
+    );
+
+    try {
+      const createThird = createVersion(project.id, project.ownerToken, {
+        title: "第三版",
+        html: "<!doctype html><html><body>third version</body></html>",
+      });
+      await transactionStarted;
+      const restoreFirst = restoreVersion(project.id, project.ownerToken, first.id);
+
+      releaseTransaction();
+      await Promise.all([createThird, restoreFirst]);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+
+    const loaded = await getProject(project.id, project.ownerToken);
+
+    expect(loaded.versions.map((version) => version.version)).toEqual([1, 2, 3]);
+    expect(loaded.currentVersion).toBe(1);
   });
 });

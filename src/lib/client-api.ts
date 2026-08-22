@@ -23,6 +23,14 @@ export type ProjectRun = {
   steps?: Array<{ role: string; status: string }>;
 };
 
+export type ProjectMessage = {
+  id: string;
+  role: string;
+  kind: string;
+  content: string;
+  mention?: string | null;
+};
+
 export type CreatedProject = ProjectInput & {
   id: string;
   ownerToken: string;
@@ -33,6 +41,7 @@ export type LoadedProject = ProjectInput & {
   id: string;
   status: string;
   currentVersion: number;
+  messages?: ProjectMessage[];
   runs?: ProjectRun[];
   versions?: ProjectVersion[];
 };
