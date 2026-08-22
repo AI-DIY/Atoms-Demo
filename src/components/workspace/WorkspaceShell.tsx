@@ -178,7 +178,7 @@ export function WorkspaceShell() {
     };
   }, []);
 
-  async function requestPlan(request: string) {
+  async function requestPlan(request: string, preserveHistory = false) {
     if (!identity || runActiveRef.current || restoreActiveRef.current) {
       return;
     }
@@ -188,8 +188,10 @@ export function WorkspaceShell() {
     runActiveRef.current = true;
     setRunning(true);
     setLoadError(null);
-    setEvents([]);
-    setApprovalRunId(null);
+    if (!preserveHistory) {
+      setEvents([]);
+      setApprovalRunId(null);
+    }
     const mode: RunMode = parseFirstMention(request)
       ? "mention"
       : project?.status === "ready"
@@ -203,9 +205,9 @@ export function WorkspaceShell() {
         { mode, request },
         (name, data) => receiveEvent(generation, mode, name, data),
       );
-    } catch {
+    } catch (error) {
       if (generation === activeGenerationRef.current) {
-        setLoadError("制定团队计划失败，请稍后重试。");
+        setLoadError(error instanceof Error ? error.message : "制定团队计划失败，请稍后重试。");
       }
     } finally {
       if (generation === activeGenerationRef.current) {
@@ -233,9 +235,9 @@ export function WorkspaceShell() {
         approvalRunId,
         (name, data) => receiveEvent(generation, "team", name, data),
       );
-    } catch {
+    } catch (error) {
       if (generation === activeGenerationRef.current) {
-        setLoadError("开始构建失败，请稍后重试。");
+        setLoadError(error instanceof Error ? error.message : "开始构建失败，请稍后重试。");
       }
     } finally {
       if (generation === activeGenerationRef.current) {
@@ -293,7 +295,12 @@ export function WorkspaceShell() {
           loading={!project && !loadError}
           messages={project?.messages ?? []}
           onApprove={approvePlan}
-          onRequestPlan={requestPlan}
+          onRequestPlan={(request) => {
+            void requestPlan(request);
+          }}
+          onRetry={(request) => {
+            void requestPlan(request, true);
+          }}
           projectGoal={goal}
           projectTitle={title}
           running={running || restoring}

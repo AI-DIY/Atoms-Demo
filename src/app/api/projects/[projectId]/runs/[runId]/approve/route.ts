@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { parseArtifact, type PlanArtifact } from "@/lib/artifacts";
 import { getAgentProvider } from "@/lib/env";
+import { allowModelStart, teamGenerationGate } from "@/lib/execution-limits";
 import {
   approvePlan,
   buildApprovedPlan,
@@ -132,36 +133,53 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
   }
 
+  if (!allowModelStart(request)) {
+    return NextResponse.json({ error: "请求过于频繁，请稍后重试。" }, { status: 429 });
+  }
+
+  let release: () => void;
+
+  try {
+    release = await teamGenerationGate.acquire();
+  } catch {
+    return NextResponse.json({ error: "服务器正忙，请稍后重试。" }, { status: 503 });
+  }
+
   if (!await claimRunForApproval(projectId, ownerToken, run.id)) {
+    release();
     return NextResponse.json({ error: "Run is not awaiting approval" }, { status: 409 });
   }
 
   return streamRunEvents(run.id, async (emit) => {
-    emit("run.started", { runId: run.id, mode: run.mode });
-
     try {
-      await updateProjectStatus(projectId, ownerToken, "building");
-      const result = await buildApprovedPlan(
-        provider,
-        plan,
-        persistentCallbacks(projectId, ownerToken, run.id, emit),
-      );
-      const version = await createVersion(projectId, ownerToken, {
-        title: result.app.content.title,
-        html: result.app.content.html,
-        sourceRunId: run.id,
-      });
+      emit("run.started", { runId: run.id, mode: run.mode });
 
-      await completeRun(projectId, ownerToken, run.id, { status: "completed" });
-      await updateProjectStatus(projectId, ownerToken, "ready");
-      emit("run.completed", { runId: run.id, versionId: version.id });
-    } catch (error) {
-      await completeRun(projectId, ownerToken, run.id, {
-        status: "failed",
-        errorCode: "build_failed",
-      });
-      await updateProjectStatus(projectId, ownerToken, "failed");
-      emit("run.failed", { runId: run.id, error: errorMessage(error) });
+      try {
+        await updateProjectStatus(projectId, ownerToken, "building");
+        const result = await buildApprovedPlan(
+          provider,
+          plan,
+          persistentCallbacks(projectId, ownerToken, run.id, emit),
+        );
+        const version = await createVersion(projectId, ownerToken, {
+          title: result.app.content.title,
+          html: result.app.content.html,
+          sourceRunId: run.id,
+        });
+
+        await completeRun(projectId, ownerToken, run.id, { status: "completed" });
+        await updateProjectStatus(projectId, ownerToken, "ready");
+        emit("run.completed", { runId: run.id, versionId: version.id });
+      } catch (error) {
+        await completeRun(projectId, ownerToken, run.id, {
+          status: "failed",
+          errorCode: "build_failed",
+        });
+        await updateProjectStatus(projectId, ownerToken, "failed");
+        emit("run.failed", { runId: run.id, error: errorMessage(error) });
+      }
+    } finally {
+      release();
     }
   });
 }

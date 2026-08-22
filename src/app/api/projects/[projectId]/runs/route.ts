@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { AppArtifact, ParsedArtifact } from "@/lib/artifacts";
+import {
+  allowModelStart,
+  specialistGenerationGate,
+  teamGenerationGate,
+} from "@/lib/execution-limits";
 import { getAgentProvider } from "@/lib/env";
 import { parseFirstMention } from "@/lib/mention";
 import {
@@ -157,97 +162,122 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
   }
 
-  const run = await createRunWithMessage(
-    projectId,
-    ownerToken,
-    {
-      mode: input.data.mode,
-      status: input.data.mode === "team" ? "planning" : "running",
-    },
-    {
-      role: "user",
-      kind: "user",
-      content: input.data.request,
-      mention: mentionedRole ?? undefined,
-    },
-  );
-  return streamRunEvents(run.id, async (emit) => {
-    emit("run.started", { runId: run.id, mode: run.mode });
+  if (!allowModelStart(request)) {
+    return NextResponse.json({ error: "请求过于频繁，请稍后重试。" }, { status: 429 });
+  }
 
-    if (input.data.mode === "mention") {
-      try {
-        await runMention(
-          provider,
-          mentionedRole!,
-          project.goal,
-          input.data.request,
-          persistentCallbacks(projectId, ownerToken, run.id, emit),
-        );
-        await completeRun(projectId, ownerToken, run.id, { status: "completed" });
-        emit("run.completed", { runId: run.id });
-      } catch {
-        await completeRun(projectId, ownerToken, run.id, {
-          status: "failed",
-          errorCode: "mention_failed",
-        });
-        emit("run.failed", { runId: run.id, error: "运行失败" });
+  const gate = input.data.mode === "team" ? teamGenerationGate : specialistGenerationGate;
+  let release: () => void;
+
+  try {
+    release = await gate.acquire();
+  } catch {
+    return NextResponse.json({ error: "服务器正忙，请稍后重试。" }, { status: 503 });
+  }
+
+  let run;
+
+  try {
+    run = await createRunWithMessage(
+      projectId,
+      ownerToken,
+      {
+        mode: input.data.mode,
+        status: input.data.mode === "team" ? "planning" : "running",
+      },
+      {
+        role: "user",
+        kind: "user",
+        content: input.data.request,
+        mention: mentionedRole ?? undefined,
+      },
+    );
+  } catch (error) {
+    release();
+    throw error;
+  }
+
+  return streamRunEvents(run.id, async (emit) => {
+    try {
+      emit("run.started", { runId: run.id, mode: run.mode });
+
+      if (input.data.mode === "mention") {
+        try {
+          await runMention(
+            provider,
+            mentionedRole!,
+            project.goal,
+            input.data.request,
+            persistentCallbacks(projectId, ownerToken, run.id, emit),
+          );
+          await completeRun(projectId, ownerToken, run.id, { status: "completed" });
+          emit("run.completed", { runId: run.id });
+        } catch {
+          await completeRun(projectId, ownerToken, run.id, {
+            status: "failed",
+            errorCode: "mention_failed",
+          });
+          emit("run.failed", { runId: run.id, error: "运行失败" });
+        }
+
+        return;
       }
 
-      return;
-    }
+      if (input.data.mode === "iterate") {
+        try {
+          await updateProjectStatus(projectId, ownerToken, "iterating");
+          const step = await runIteration(
+            provider,
+            project.goal,
+            input.data.request,
+            currentApp!,
+            persistentCallbacks(projectId, ownerToken, run.id, emit),
+          );
+          const app = step.artifact as AppArtifact;
+          const version = await createVersion(projectId, ownerToken, {
+            title: app.content.title,
+            html: app.content.html,
+            sourceRunId: run.id,
+          });
 
-    if (input.data.mode === "iterate") {
+          await completeRun(projectId, ownerToken, run.id, { status: "completed" });
+          await updateProjectStatus(projectId, ownerToken, "ready");
+          emit("run.completed", { runId: run.id, versionId: version.id });
+        } catch {
+          await completeRun(projectId, ownerToken, run.id, {
+            status: "failed",
+            errorCode: "iteration_failed",
+          });
+          await updateProjectStatus(projectId, ownerToken, "failed");
+          emit("run.failed", { runId: run.id, error: "运行失败" });
+        }
+
+        return;
+      }
+
       try {
-        await updateProjectStatus(projectId, ownerToken, "iterating");
-        const step = await runIteration(
+        const plan = await createTeamPlan(
           provider,
-          project.goal,
           input.data.request,
-          currentApp!,
           persistentCallbacks(projectId, ownerToken, run.id, emit),
         );
-        const app = step.artifact as AppArtifact;
-        const version = await createVersion(projectId, ownerToken, {
-          title: app.content.title,
-          html: app.content.html,
-          sourceRunId: run.id,
-        });
 
-        await completeRun(projectId, ownerToken, run.id, { status: "completed" });
-        await updateProjectStatus(projectId, ownerToken, "ready");
-        emit("run.completed", { runId: run.id, versionId: version.id });
-      } catch {
+        await updateRun(projectId, ownerToken, run.id, {
+          status: "awaiting_approval",
+          planJson: JSON.stringify({ goal: plan.goal, artifact: plan.artifact }),
+        });
+        await updateProjectStatus(projectId, ownerToken, "awaiting_approval");
+        emit("run.awaiting_approval", { runId: run.id });
+      } catch (error) {
         await completeRun(projectId, ownerToken, run.id, {
           status: "failed",
-          errorCode: "iteration_failed",
+          errorCode: "plan_failed",
         });
         await updateProjectStatus(projectId, ownerToken, "failed");
-        emit("run.failed", { runId: run.id, error: "运行失败" });
+        emit("run.failed", { runId: run.id, error: errorMessage(error) });
       }
-
-      return;
-    }
-
-    try {
-      const plan = await createTeamPlan(
-        provider,
-        input.data.request,
-        persistentCallbacks(projectId, ownerToken, run.id, emit),
-      );
-
-      await updateRun(projectId, ownerToken, run.id, {
-        status: "awaiting_approval",
-        planJson: JSON.stringify({ goal: plan.goal, artifact: plan.artifact }),
-      });
-      await updateProjectStatus(projectId, ownerToken, "awaiting_approval");
-      emit("run.awaiting_approval", { runId: run.id });
-    } catch (error) {
-      await completeRun(projectId, ownerToken, run.id, {
-        status: "failed",
-        errorCode: "plan_failed",
-      });
-      await updateProjectStatus(projectId, ownerToken, "failed");
-      emit("run.failed", { runId: run.id, error: errorMessage(error) });
+    } finally {
+      release();
     }
   });
 }

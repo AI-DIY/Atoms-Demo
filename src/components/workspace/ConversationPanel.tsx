@@ -39,6 +39,7 @@ export function ConversationPanel({
   running,
   onApprove,
   onRequestPlan,
+  onRetry,
   projectGoal,
   projectTitle,
   status,
@@ -51,6 +52,7 @@ export function ConversationPanel({
   running: boolean;
   onApprove: () => void;
   onRequestPlan: (request: string) => void;
+  onRetry: (request: string) => void;
   projectGoal: string;
   projectTitle: string;
   status: string;
@@ -100,7 +102,14 @@ export function ConversationPanel({
         <p>{projectTitle}</p>
       </div>
 
-      {error ? <p className="workspace-error" role="alert">{error}</p> : null}
+      {error ? (
+        <div className="workspace-error">
+          <p role="alert">{error}</p>
+          <button disabled={running} onClick={() => onRetry(request.trim())} type="button">
+            重试
+          </button>
+        </div>
+      ) : null}
 
       <div className="feed">
         {messages.length > 0 ? (

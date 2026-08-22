@@ -157,6 +157,24 @@ describe("WorkspaceShell", () => {
     });
   });
 
+  it("shows the server-provided rate limit message without clearing existing messages", async () => {
+    clientApi.loadProject.mockResolvedValue({
+      ...loadedProject,
+      messages: [{ id: "message-1", role: "research", kind: "assistant", content: "已有研究结论" }],
+    });
+    clientApi.startRun.mockRejectedValue(new Error("请求过于频繁，请稍后重试。"));
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "为摄影师创建预约工具" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("请求过于频繁，请稍后重试。");
+    });
+    expect(screen.getByText("已有研究结论")).toBeInTheDocument();
+  });
+
   it("在 reviewer 开始验收时更新目标状态", async () => {
     clientApi.startRun.mockImplementation(
       async (

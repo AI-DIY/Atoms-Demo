@@ -68,13 +68,35 @@ export class ApiError extends Error {
   }
 }
 
+function errorMessageFromResponseBody(detail: string): string {
+  try {
+    const body: unknown = JSON.parse(detail);
+
+    if (body && typeof body === "object" && !Array.isArray(body)) {
+      const error = Reflect.get(body, "error");
+      const message = Reflect.get(body, "message");
+
+      if (typeof error === "string") return error;
+      if (error && typeof error === "object" && typeof Reflect.get(error, "message") === "string") {
+        return Reflect.get(error, "message") as string;
+      }
+      if (typeof message === "string") return message;
+    }
+  } catch {
+    // Non-JSON API errors retain their response text.
+  }
+
+  return detail;
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  const detail = errorMessageFromResponseBody(await response.text());
+  return detail || `Request failed with status ${response.status}`;
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const detail = await response.text();
-    throw new ApiError(
-      response.status,
-      detail || `Request failed with status ${response.status}`,
-    );
+    throw new ApiError(response.status, await readErrorMessage(response));
   }
 
   return response.json() as Promise<T>;
@@ -139,11 +161,7 @@ function emitSseEvent(block: string, onEvent: RunEventHandler) {
 
 async function consumeSse(response: Response, onEvent: RunEventHandler): Promise<void> {
   if (!response.ok) {
-    const detail = await response.text();
-    throw new ApiError(
-      response.status,
-      detail || `Request failed with status ${response.status}`,
-    );
+    throw new ApiError(response.status, await readErrorMessage(response));
   }
 
   if (!response.body) {

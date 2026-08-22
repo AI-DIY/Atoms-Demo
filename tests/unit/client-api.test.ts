@@ -137,6 +137,25 @@ describe("client project API", () => {
     ).rejects.toThrow("服务器繁忙");
   });
 
+  it("extracts a JSON error message from a rejected run stream", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: "请求过于频繁，请稍后重试。" }),
+      { status: 429, headers: { "content-type": "application/json" } },
+    )));
+
+    await expect(
+      startRun(
+        "project-1",
+        "owner-token-1",
+        { mode: "team", request: "为摄影师创建预约工具" },
+        vi.fn(),
+      ),
+    ).rejects.toMatchObject({
+      status: 429,
+      message: "请求过于频繁，请稍后重试。",
+    });
+  });
+
   it("streams approval events to the run approval endpoint", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response('event: run.completed\ndata: {"versionId":"version-1"}\n\n', {
@@ -160,7 +179,7 @@ describe("client project API", () => {
     expect(events).toEqual([["run.completed", { versionId: "version-1" }]]);
   });
 
-  it("restores a version with the project token and preserves the server error body", async () => {
+  it("restores a version with the project token and extracts the server JSON error", async () => {
     const restoreVersion = Reflect.get(
       await import("@/lib/client-api"),
       "restoreVersion",
@@ -186,7 +205,7 @@ describe("client project API", () => {
       restoreVersion("project-1", "owner-token-1", "version-1", fetcher),
     ).rejects.toMatchObject({
       status: 404,
-      message: JSON.stringify({ error: "Version not found" }),
+      message: "Version not found",
     });
     expect(fetcher).toHaveBeenCalledWith(
       "/api/projects/project-1/versions/version-1/restore",

@@ -55,6 +55,30 @@ describe("projects API", () => {
     });
   });
 
+  it("limits project creation to five requests per IP in ten minutes", async () => {
+    for (let index = 0; index < 5; index += 1) {
+      const response = await POST(
+        new Request("http://localhost/api/projects", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.20" },
+          body: JSON.stringify(projectInput),
+        }),
+      );
+      expect(response.status).toBe(201);
+    }
+
+    const rejected = await POST(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.20" },
+        body: JSON.stringify(projectInput),
+      }),
+    );
+
+    expect(rejected.status).toBe(429);
+    await expect(rejected.json()).resolves.toEqual({ error: "请求过于频繁，请稍后重试。" });
+  });
+
   it("rejects a project request whose declared content length exceeds the safety limit", async () => {
     const response = await POST(
       new Request("http://localhost/api/projects", {
