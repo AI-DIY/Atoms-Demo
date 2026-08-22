@@ -120,6 +120,7 @@ export function WorkspaceShell() {
     mode: RunMode,
     name: string,
     data: unknown,
+    failedOperation?: FailedOperation,
   ) {
     if (generation !== activeGenerationRef.current) {
       return;
@@ -153,6 +154,15 @@ export function WorkspaceShell() {
       setApprovalRunId(null);
       const error = typeof payload.error === "string" ? payload.error : "团队运行失败，请重试。";
       setLoadError(error);
+      if (failedOperation?.kind === "approve") {
+        setLastFailedOperation({
+          kind: "run",
+          mode: "team",
+          request: project?.goal ?? defaultProject.goal,
+        });
+      } else if (failedOperation) {
+        setLastFailedOperation(failedOperation);
+      }
     }
   }
 
@@ -212,7 +222,13 @@ export function WorkspaceShell() {
         identity.projectId,
         identity.ownerToken,
         { mode, request },
-        (name, data) => receiveEvent(generation, mode, name, data),
+        (name, data) => receiveEvent(
+          generation,
+          mode,
+          name,
+          data,
+          { kind: "run", mode, request },
+        ),
       );
     } catch (error) {
       if (generation === activeGenerationRef.current) {
@@ -244,7 +260,13 @@ export function WorkspaceShell() {
         identity.projectId,
         identity.ownerToken,
         runId,
-        (name, data) => receiveEvent(generation, "team", name, data),
+        (name, data) => receiveEvent(
+          generation,
+          "team",
+          name,
+          data,
+          { kind: "approve", runId },
+        ),
       );
     } catch (error) {
       if (generation === activeGenerationRef.current) {
@@ -328,7 +350,7 @@ export function WorkspaceShell() {
           onRequestPlan={(request) => {
             void requestPlan(request);
           }}
-          onRetry={(request) => {
+          onRetry={() => {
             void retryLastFailure();
           }}
           projectGoal={goal}

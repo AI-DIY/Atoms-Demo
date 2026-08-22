@@ -1,33 +1,84 @@
 export type RateLimiter = {
   allow: (key: string, now: number) => boolean;
   reset: () => void;
+  size: () => number;
 };
 
-export function createRateLimiter(limit: number, windowMs: number): RateLimiter {
-  if (!Number.isInteger(limit) || limit < 1 || !Number.isFinite(windowMs) || windowMs <= 0) {
+export function createRateLimiter(
+  limit: number,
+  windowMs: number,
+  maxKeys = 10_000,
+): RateLimiter {
+  if (
+    !Number.isInteger(limit)
+    || limit < 1
+    || !Number.isFinite(windowMs)
+    || windowMs <= 0
+    || !Number.isInteger(maxKeys)
+    || maxKeys < 1
+  ) {
     throw new Error("Rate limit configuration is invalid");
   }
 
   const attemptsByKey = new Map<string, number[]>();
 
+  function activeAttempts(attempts: number[], now: number) {
+    const earliestAllowed = now - windowMs;
+    return attempts.filter((attempt) => attempt > earliestAllowed);
+  }
+
+  function makeRoom(now: number) {
+    if (attemptsByKey.size < maxKeys) {
+      return;
+    }
+
+    for (const [key, attempts] of attemptsByKey) {
+      const active = activeAttempts(attempts, now);
+
+      if (active.length === 0) {
+        attemptsByKey.delete(key);
+      } else if (active.length !== attempts.length) {
+        attemptsByKey.set(key, active);
+      }
+    }
+
+    if (attemptsByKey.size >= maxKeys) {
+      const oldestKey = attemptsByKey.keys().next().value;
+
+      if (oldestKey !== undefined) {
+        attemptsByKey.delete(oldestKey);
+      }
+    }
+  }
+
   return {
     allow(key, now) {
-      const earliestAllowed = now - windowMs;
-      const activeAttempts = (attemptsByKey.get(key) ?? []).filter(
-        (attempt) => attempt > earliestAllowed,
-      );
+      const active = activeAttempts(attemptsByKey.get(key) ?? [], now);
 
-      if (activeAttempts.length >= limit) {
-        attemptsByKey.set(key, activeAttempts);
+      if (active.length === 0) {
+        attemptsByKey.delete(key);
+      }
+
+      if (active.length >= limit) {
+        attemptsByKey.delete(key);
+        attemptsByKey.set(key, active);
         return false;
       }
 
-      activeAttempts.push(now);
-      attemptsByKey.set(key, activeAttempts);
+      if (!attemptsByKey.has(key)) {
+        makeRoom(now);
+      }
+
+      active.push(now);
+      attemptsByKey.delete(key);
+      attemptsByKey.set(key, active);
       return true;
     },
     reset() {
       attemptsByKey.clear();
+    },
+    size() {
+      return attemptsByKey.size;
     },
   };
 }

@@ -145,7 +145,16 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "服务器正忙，请稍后重试。" }, { status: 503 });
   }
 
-  if (!await claimRunForApproval(projectId, ownerToken, run.id)) {
+  let claimed: boolean;
+
+  try {
+    claimed = await claimRunForApproval(projectId, ownerToken, run.id);
+  } catch {
+    release();
+    return NextResponse.json({ error: "暂时无法开始构建，请稍后重试。" }, { status: 503 });
+  }
+
+  if (!claimed) {
     release();
     return NextResponse.json({ error: "Run is not awaiting approval" }, { status: 409 });
   }

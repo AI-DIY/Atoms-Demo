@@ -24,6 +24,8 @@ import {
   updateProjectStatus,
   updateRun,
 } from "@/lib/repository";
+import { readBoundedJsonBody } from "@/lib/request-body";
+import { maxRunRequestBytes } from "@/lib/run-input";
 import { streamRunEvents, type RunEventEmitter } from "@/lib/run-events";
 
 const runRequest = z.string().trim().min(1).max(2_000);
@@ -43,14 +45,6 @@ function notFoundResponse() {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Run failed";
-}
-
-async function parseJson(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    return undefined;
-  }
 }
 
 type PersistentStep = {
@@ -105,7 +99,15 @@ export async function POST(request: Request, { params }: RouteContext) {
     return notFoundResponse();
   }
 
-  const input = createRunInput.safeParse(await parseJson(request));
+  const requestBody = await readBoundedJsonBody(request, maxRunRequestBytes);
+
+  if (requestBody.kind === "tooLarge") {
+    return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+  }
+
+  const input = createRunInput.safeParse(
+    requestBody.kind === "json" ? requestBody.body : undefined,
+  );
 
   if (!input.success) {
     return NextResponse.json({ error: "Invalid run input" }, { status: 400 });

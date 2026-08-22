@@ -9,6 +9,7 @@ import {
 import type { AgentContext, AgentOutput, AgentProvider } from "@/lib/provider";
 import { MockProvider } from "@/lib/providers/mock";
 import { createProject, createRun, getProject } from "@/lib/repository";
+import { maxRunRequestBytes } from "@/lib/run-input";
 import { prisma } from "@/server/prisma";
 
 const getAgentProvider = vi.hoisted(() => vi.fn());
@@ -105,6 +106,60 @@ describe("execution limits", () => {
 
     expect(rejected.status).toBe(429);
     await expect(rejected.json()).resolves.toEqual({ error: "请求过于频繁，请稍后重试。" });
+  });
+
+  it("rejects a run request whose declared content length exceeds the safety limit before starting a model", async () => {
+    const project = await createProject({ title: "请求体上限测试", goal: "为摄影师创建预约与报价工具" });
+    const response = await startRun(
+      new Request(`http://localhost/api/projects/${project.id}/runs`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(maxRunRequestBytes + 1),
+          "x-project-token": project.ownerToken,
+          "x-forwarded-for": "198.51.100.16",
+        },
+        body: JSON.stringify({ mode: "team", request: "x".repeat(9_000) }),
+      }),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Request body too large" });
+    expect(getAgentProvider).not.toHaveBeenCalled();
+    await expect(getProject(project.id, project.ownerToken)).resolves.toMatchObject({ runs: [] });
+  });
+
+  it("rejects a chunked oversized run request before starting a model", async () => {
+    const project = await createProject({ title: "分块请求体测试", goal: "为摄影师创建预约与报价工具" });
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(maxRunRequestBytes));
+        controller.enqueue(new Uint8Array([0]));
+        controller.close();
+      },
+    });
+    const request = new Request(`http://localhost/api/projects/${project.id}/runs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-project-token": project.ownerToken,
+        "x-forwarded-for": "198.51.100.17",
+      },
+      body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    expect(request.headers.get("content-length")).toBeNull();
+
+    const response = await startRun(request, {
+      params: Promise.resolve({ projectId: project.id }),
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "Request body too large" });
+    expect(getAgentProvider).not.toHaveBeenCalled();
+    await expect(getProject(project.id, project.ownerToken)).resolves.toMatchObject({ runs: [] });
   });
 
   it("counts approvals in the same IP model-start window", async () => {

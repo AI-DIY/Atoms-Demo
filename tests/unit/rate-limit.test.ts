@@ -26,4 +26,19 @@ describe("createRateLimiter", () => {
     expect(limiter.allow("192.0.2.2", 0)).toBe(true);
     expect(limiter.allow("192.0.2.1", 1)).toBe(false);
   });
+
+  it("bounds stored keys and prunes expired keys before accepting a fresh key", () => {
+    const limiter = createRateLimiter(2, 60_000, 3);
+
+    expect(limiter.allow("192.0.2.10", 0)).toBe(true);
+    expect(limiter.allow("192.0.2.11", 0)).toBe(true);
+    expect(limiter.allow("192.0.2.12", 0)).toBe(true);
+    expect(limiter.allow("192.0.2.13", 0)).toBe(true);
+    expect(limiter.size()).toBeLessThanOrEqual(3);
+
+    expect(limiter.allow("192.0.2.20", 60_001)).toBe(true);
+    expect(limiter.size()).toBe(1);
+    expect(limiter.allow("192.0.2.20", 60_001)).toBe(true);
+    expect(limiter.allow("192.0.2.20", 60_001)).toBe(false);
+  });
 });

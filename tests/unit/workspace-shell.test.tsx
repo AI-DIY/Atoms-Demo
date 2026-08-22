@@ -208,6 +208,52 @@ describe("WorkspaceShell", () => {
     expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("团队负责人")).toHaveLength(2);
   });
 
+  it("retries a run.failed stream with its original iteration request while preserving project content", async () => {
+    clientApi.loadProject.mockResolvedValue({
+      ...loadedProject,
+      status: "ready",
+      currentVersion: 1,
+      messages: [{ id: "message-1", role: "pm", kind: "assistant", content: "已有产品结论" }],
+      versions: [{ id: "version-1", version: 1, title: "现有版本", html: "<h1>现有版本</h1>" }],
+    });
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("step.started", { role: "engineer" });
+        onEvent("run.failed", { error: "构建服务不可用" });
+      },
+    );
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "将预约表单改为双列布局" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("构建服务不可用");
+    });
+    expect(screen.getByText("已有产品结论")).toBeInTheDocument();
+    expect(screen.getByTitle("Generated application")).toHaveAttribute("srcdoc", "<h1>现有版本</h1>");
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenCalledTimes(2);
+      expect(clientApi.startRun).toHaveBeenNthCalledWith(
+        2,
+        "project-1",
+        "owner-token-1",
+        { mode: "iterate", request: "将预约表单改为双列布局" },
+        expect.any(Function),
+      );
+    });
+    expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("工程师")).toHaveLength(2);
+  });
+
   it("retries a failed approval against the same awaiting run without starting a new plan", async () => {
     window.localStorage.setItem(
       projectIdentityStorageKey,
@@ -239,6 +285,47 @@ describe("WorkspaceShell", () => {
       );
     });
     expect(clientApi.startRun).not.toHaveBeenCalled();
+    expect(screen.getByText("已有计划摘要")).toBeInTheDocument();
+  });
+
+  it("restarts a team plan when an approval stream reports run.failed", async () => {
+    window.localStorage.setItem(
+      projectIdentityStorageKey,
+      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
+    );
+    clientApi.loadProject.mockResolvedValue({
+      ...loadedProject,
+      status: "awaiting_approval",
+      runs: [{ id: "claimed-run", mode: "team", status: "awaiting_approval" }],
+      messages: [{ id: "message-1", role: "pm", kind: "assistant", content: "已有计划摘要" }],
+    });
+    clientApi.approveRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _runId: string,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.failed", { error: "构建服务不可用" });
+      },
+    );
+    render(<WorkspaceShell />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("构建服务不可用");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenCalledWith(
+        "project-1",
+        "owner-token-1",
+        { mode: "team", request: loadedProject.goal },
+        expect.any(Function),
+      );
+    });
+    expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
     expect(screen.getByText("已有计划摘要")).toBeInTheDocument();
   });
 

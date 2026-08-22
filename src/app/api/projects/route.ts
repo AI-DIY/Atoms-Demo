@@ -1,67 +1,11 @@
 import { NextResponse } from "next/server";
 import { allowProjectCreation } from "@/lib/execution-limits";
 import { createProjectInput, maxProjectRequestBytes } from "@/lib/project-input";
+import { readBoundedJsonBody } from "@/lib/request-body";
 import { createProject } from "@/lib/repository";
 
-type RequestBodyResult =
-  | { kind: "invalid" }
-  | { kind: "tooLarge" }
-  | { kind: "json"; body: unknown };
-
-async function readProjectRequestBody(request: Request): Promise<RequestBodyResult> {
-  const reader = request.body?.getReader();
-
-  if (!reader) {
-    return { kind: "invalid" };
-  }
-
-  const chunks: Uint8Array[] = [];
-  let byteLength = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      byteLength += value.byteLength;
-
-      if (byteLength > maxProjectRequestBytes) {
-        await reader.cancel();
-        return { kind: "tooLarge" };
-      }
-
-      chunks.push(value);
-    }
-  } catch {
-    return { kind: "invalid" };
-  }
-
-  const bytes = new Uint8Array(byteLength);
-  let offset = 0;
-
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  try {
-    return { kind: "json", body: JSON.parse(new TextDecoder().decode(bytes)) };
-  } catch {
-    return { kind: "invalid" };
-  }
-}
-
 export async function POST(request: Request) {
-  const contentLength = Number(request.headers.get("content-length"));
-
-  if (Number.isFinite(contentLength) && contentLength > maxProjectRequestBytes) {
-    return NextResponse.json({ error: "Request body too large" }, { status: 413 });
-  }
-
-  const requestBody = await readProjectRequestBody(request);
+  const requestBody = await readBoundedJsonBody(request, maxProjectRequestBytes);
 
   if (requestBody.kind === "tooLarge") {
     return NextResponse.json({ error: "Request body too large" }, { status: 413 });
