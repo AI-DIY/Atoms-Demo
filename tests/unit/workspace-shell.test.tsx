@@ -1,11 +1,13 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultProject } from "@/lib/default-project";
 import { projectIdentityStorageKey } from "@/lib/project-session";
 
 const clientApi = vi.hoisted(() => ({
+  approveRun: vi.fn(),
   createProject: vi.fn(),
   loadProject: vi.fn(),
+  startRun: vi.fn(),
 }));
 
 vi.mock("@/lib/client-api", () => clientApi);
@@ -24,6 +26,8 @@ const loadedProject = {
   ...defaultProject,
   status: "draft",
   currentVersion: 0,
+  runs: [],
+  versions: [],
 };
 
 describe("WorkspaceShell", () => {
@@ -31,6 +35,8 @@ describe("WorkspaceShell", () => {
     window.localStorage.clear();
     clientApi.createProject.mockReset();
     clientApi.loadProject.mockReset();
+    clientApi.startRun.mockReset();
+    clientApi.approveRun.mockReset();
     clientApi.createProject.mockResolvedValue(createdProject);
     clientApi.loadProject.mockResolvedValue(loadedProject);
   });
@@ -81,5 +87,75 @@ describe("WorkspaceShell", () => {
     });
 
     expect(clientApi.createProject).not.toHaveBeenCalled();
+  });
+
+  it("starts a team plan, approves it, and refreshes the completed version", async () => {
+    const completedProject = {
+      ...loadedProject,
+      currentVersion: 1,
+      status: "ready",
+      versions: [
+        {
+          id: "version-1",
+          version: 1,
+          title: "摄影预约",
+          html: "<h1>构建完成</h1>",
+        },
+      ],
+    };
+    clientApi.loadProject
+      .mockResolvedValueOnce(loadedProject)
+      .mockResolvedValueOnce(completedProject);
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.awaiting_approval", { runId: "run-1" });
+      },
+    );
+    clientApi.approveRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _runId: string,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.completed", { runId: "run-1", versionId: "version-1" });
+      },
+    );
+
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "为摄影师创建预约与报价工具" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenCalledWith(
+        "project-1",
+        "owner-token-1",
+        { mode: "team", request: "为摄影师创建预约与报价工具" },
+        expect.any(Function),
+      );
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
+
+    await waitFor(() => {
+      expect(clientApi.approveRun).toHaveBeenCalledWith(
+        "project-1",
+        "owner-token-1",
+        "run-1",
+        expect.any(Function),
+      );
+      expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByTitle("Generated application")).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("构建完成"),
+    );
   });
 });

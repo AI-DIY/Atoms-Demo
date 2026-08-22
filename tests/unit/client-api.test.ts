@@ -1,7 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
-import { ApiError, createProject, loadProject } from "@/lib/client-api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ApiError,
+  approveRun,
+  createProject,
+  loadProject,
+  startRun,
+} from "@/lib/client-api";
 
 describe("client project API", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("sends the owner token only when loading a project", async () => {
     const fetcher = vi
       .fn()
@@ -70,5 +80,83 @@ describe("client project API", () => {
     await expect(
       loadProject({ projectId: "missing", ownerToken: "owner-token" }, fetcher),
     ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("reads complete and split SSE events with the project token", async () => {
+    const encoder = new TextEncoder();
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('event: run.started\ndata: {"runId":"run-'));
+            controller.enqueue(encoder.encode('1"}\n\nevent: step.completed\ndata: {"role":"pm"}\n'));
+            controller.enqueue(encoder.encode('\nevent: run.awaiting_approval\ndata: {"runId":"run-1"}\n\n'));
+            controller.close();
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const events: Array<[string, unknown]> = [];
+    vi.stubGlobal("fetch", fetcher);
+
+    await startRun(
+      "project-1",
+      "owner-token-1",
+      { mode: "team", request: "为摄影师创建预约工具" },
+      (name, data) => events.push([name, data]),
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/projects/project-1/runs",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-project-token": "owner-token-1",
+        },
+      }),
+    );
+    expect(events).toEqual([
+      ["run.started", { runId: "run-1" }],
+      ["step.completed", { role: "pm" }],
+      ["run.awaiting_approval", { runId: "run-1" }],
+    ]);
+  });
+
+  it("throws the response text when starting a run fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("服务器繁忙", { status: 503 })));
+
+    await expect(
+      startRun(
+        "project-1",
+        "owner-token-1",
+        { mode: "team", request: "为摄影师创建预约工具" },
+        vi.fn(),
+      ),
+    ).rejects.toThrow("服务器繁忙");
+  });
+
+  it("streams approval events to the run approval endpoint", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response('event: run.completed\ndata: {"versionId":"version-1"}\n\n', {
+        status: 200,
+      }),
+    );
+    const events: Array<[string, unknown]> = [];
+    vi.stubGlobal("fetch", fetcher);
+
+    await approveRun("project-1", "owner-token-1", "run-1", (name, data) => {
+      events.push([name, data]);
+    });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/projects/project-1/runs/run-1/approve",
+      {
+        method: "POST",
+        headers: { "x-project-token": "owner-token-1" },
+      },
+    );
+    expect(events).toEqual([["run.completed", { versionId: "version-1" }]]);
   });
 });

@@ -1,45 +1,53 @@
 "use client";
 
-import { ArrowUp, MoreHorizontal, ShieldCheck, Sparkles } from "lucide-react";
-
-const events = [
-  {
-    name: "团队负责人",
-    time: "刚刚",
-    color: "#a6e07a",
-    text: "已根据目标安排产品、架构与工程三个阶段，并在工程实现前保留审批点。",
-  },
-  {
-    name: "产品经理",
-    time: "等待中",
-    color: "#ffb095",
-    text: "批准后将整理核心用户、核心流程与可验证的交互验收条件。",
-  },
-  {
-    name: "架构师",
-    time: "等待中",
-    color: "#c6adff",
-    text: "批准后将限定单文件实现边界，确保预览可安全运行。",
-  },
-  {
-    name: "工程师",
-    time: "等待中",
-    color: "#77d9d0",
-    text: "将基于确认后的需求生成无需外部依赖的网页应用。",
-  },
-];
+import { ArrowUp, MoreHorizontal } from "lucide-react";
+import { useState } from "react";
+import { AgentTimeline, type TimelineEvent } from "./AgentTimeline";
+import { PlanApprovalCard } from "./PlanApprovalCard";
 
 export function ConversationPanel({
   error,
+  events,
   loading,
+  onApprove,
+  onRequestPlan,
   projectGoal,
   projectTitle,
+  status,
+  awaitingApproval,
 }: {
   error: string | null;
+  events: TimelineEvent[];
   loading: boolean;
+  onApprove: () => void;
+  onRequestPlan: (request: string) => void;
   projectGoal: string;
   projectTitle: string;
+  status: string;
+  awaitingApproval: boolean;
 }) {
+  const [request, setRequest] = useState(projectGoal);
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextRequest = request.trim();
+
+    if (nextRequest) {
+      onRequestPlan(nextRequest);
+    }
+  }
+
+  const statusText: Record<string, string> = {
+    draft: "草稿",
+    planning: "制定计划",
+    awaiting_approval: "等待审批",
+    building: "构建中",
+    reviewing: "验收中",
+    ready: "已就绪",
+    failed: "运行失败",
+    iterating: "迭代中",
+  };
+
   return (
     <div className="conversation">
       <header className="conversation-header">
@@ -55,7 +63,7 @@ export function ConversationPanel({
       <div className="goal-card">
         <div className="goal-card-top">
           <span>项目目标</span>
-          <span className="goal-tag">{loading ? "加载中" : "计划中"}</span>
+          <span className="goal-tag">{loading ? "加载中" : statusText[status] ?? status}</span>
         </div>
         <h1>{projectGoal}</h1>
         <p>{projectTitle}</p>
@@ -64,35 +72,39 @@ export function ConversationPanel({
       {error ? <p className="workspace-error" role="alert">{error}</p> : null}
 
       <div className="feed">
-        <p className="feed-heading">团队运行记录</p>
-        {events.map((event, index) => (
-          <article className="agent-event" key={event.name}>
-            <span
-              className="agent-avatar"
-              style={{ "--event-color": event.color } as React.CSSProperties}
-            >
-              {index === 0 ? <Sparkles size={15} aria-hidden /> : <ShieldCheck size={15} aria-hidden />}
-            </span>
-            <div>
-              <div className="event-heading">
-                <strong>{event.name}</strong>
-                <time>{event.time}</time>
-              </div>
-              <p className="event-copy">{event.text}</p>
-            </div>
-          </article>
-        ))}
+        <AgentTimeline events={events} />
+        {awaitingApproval ? (
+          <PlanApprovalCard
+            onApprove={onApprove}
+            roles={["pm", "architect", "engineer"]}
+          />
+        ) : null}
       </div>
 
-      <form className="composer" onSubmit={(event) => event.preventDefault()}>
+      <form className="composer" onSubmit={submit}>
         <div className="composer-box">
           <textarea
             aria-label="描述你要构建的产品"
-            placeholder="描述你要构建的产品，或输入 @架构师 ..."
+            onChange={(event) => setRequest(event.target.value)}
+            placeholder="描述你要构建的产品"
             rows={2}
+            value={request}
           />
-          <button className="send-button" title="制定团队计划" type="submit">
+          <button
+            className="send-button"
+            style={{
+              alignItems: "center",
+              display: "inline-flex",
+              gap: 6,
+              justifyContent: "center",
+              minWidth: 140,
+              padding: "0 12px",
+              width: "auto",
+            }}
+            type="submit"
+          >
             <ArrowUp aria-hidden />
+            <span>制定团队计划</span>
           </button>
         </div>
         <p className="composer-help">@ 专家直接咨询；按目标发起团队协作</p>
