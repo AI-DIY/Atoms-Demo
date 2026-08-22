@@ -7,6 +7,10 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    env: {
+      DATABASE_URL: "file:./test.db",
+    },
+    globalSetup: ["./tests/global-setup.ts"],
     setupFiles: ["./vitest.setup.ts"],
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
   },

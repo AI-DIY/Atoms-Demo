@@ -25,6 +25,10 @@ describe("project repository", () => {
     await prisma.$disconnect();
   });
 
+  it("runs against the dedicated test database", () => {
+    expect(process.env.DATABASE_URL).toBe("file:./test.db");
+  });
+
   it("persists a project behind its opaque owner token", async () => {
     const created = await createProject({
       title: "摄影预约助手",
@@ -33,8 +37,33 @@ describe("project repository", () => {
 
     const loaded = await getProject(created.id, created.ownerToken);
 
+    expect(created.ownerToken).toEqual(expect.any(String));
     expect(loaded.title).toBe("摄影预约助手");
     expect(loaded.currentVersion).toBe(0);
+    expect(loaded).not.toHaveProperty("ownerToken");
+  });
+
+  it("allocates consecutive versions for concurrent writes", async () => {
+    const project = await createProject({
+      title: "并发版本测试",
+      goal: "创建一个可交互的预约工具",
+    });
+
+    await Promise.all([
+      createVersion(project.id, project.ownerToken, {
+        title: "V1",
+        html: "<!doctype html><html><body>v1</body></html>",
+      }),
+      createVersion(project.id, project.ownerToken, {
+        title: "V2",
+        html: "<!doctype html><html><body>v2</body></html>",
+      }),
+    ]);
+
+    const loaded = await getProject(project.id, project.ownerToken);
+
+    expect(loaded.versions.map((version) => version.version)).toEqual([1, 2]);
+    expect(loaded.currentVersion).toBe(2);
   });
 
   it("restores an existing version without deleting history", async () => {

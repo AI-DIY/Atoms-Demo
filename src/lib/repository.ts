@@ -48,6 +48,42 @@ const projectIncludes = {
   versions: { orderBy: { version: "asc" as const } },
 };
 
+const projectSelect = {
+  id: true,
+  title: true,
+  goal: true,
+  status: true,
+  currentVersion: true,
+  createdAt: true,
+  updatedAt: true,
+  ...projectIncludes,
+};
+
+const versionLocks = new Map<string, Promise<void>>();
+
+async function withProjectVersionLock<T>(
+  projectId: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const previous = versionLocks.get(projectId) ?? Promise.resolve();
+  let releaseCurrent!: () => void;
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+
+  versionLocks.set(projectId, current);
+  await previous;
+
+  try {
+    return await action();
+  } finally {
+    releaseCurrent();
+    if (versionLocks.get(projectId) === current) {
+      versionLocks.delete(projectId);
+    }
+  }
+}
+
 async function requireOwnedProject(id: string, ownerToken: string) {
   const project = await prisma.project.findFirst({
     where: { id, ownerToken },
@@ -91,7 +127,7 @@ export async function createProject(input: ProjectInput) {
 export async function getProject(id: string, ownerToken: string) {
   const project = await prisma.project.findFirst({
     where: { id, ownerToken },
-    include: projectIncludes,
+    select: projectSelect,
   });
 
   if (!project) {
@@ -180,30 +216,32 @@ export async function createVersion(
   ownerToken: string,
   input: VersionInput,
 ) {
-  await requireOwnedProject(projectId, ownerToken);
+  return withProjectVersionLock(projectId, async () => {
+    await requireOwnedProject(projectId, ownerToken);
 
-  return prisma.$transaction(async (transaction) => {
-    const latest = await transaction.appVersion.findFirst({
-      where: { projectId },
-      orderBy: { version: "desc" },
-    });
-    const version = (latest?.version ?? 0) + 1;
-    const created = await transaction.appVersion.create({
-      data: {
-        projectId,
-        version,
-        title: input.title,
-        html: input.html,
-        sourceRunId: input.sourceRunId,
-      },
-    });
+    return prisma.$transaction(async (transaction) => {
+      const latest = await transaction.appVersion.findFirst({
+        where: { projectId },
+        orderBy: { version: "desc" },
+      });
+      const version = (latest?.version ?? 0) + 1;
+      const created = await transaction.appVersion.create({
+        data: {
+          projectId,
+          version,
+          title: input.title,
+          html: input.html,
+          sourceRunId: input.sourceRunId,
+        },
+      });
 
-    await transaction.project.update({
-      where: { id: projectId },
-      data: { currentVersion: version },
-    });
+      await transaction.project.update({
+        where: { id: projectId },
+        data: { currentVersion: version },
+      });
 
-    return created;
+      return created;
+    });
   });
 }
 
