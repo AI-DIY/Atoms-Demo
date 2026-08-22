@@ -5,6 +5,7 @@ import {
   approveRun,
   createProject,
   loadProject,
+  restoreVersion,
   startRun,
   type LoadedProject,
   type ProjectIdentity,
@@ -14,6 +15,7 @@ import {
   readProjectIdentity,
   restoreOrCreateProject,
 } from "@/lib/project-session";
+import { parseFirstMention } from "@/lib/mention";
 import { ConversationPanel } from "./ConversationPanel";
 import { PreviewPanel } from "./PreviewPanel";
 import { ProjectSidebar } from "./ProjectSidebar";
@@ -41,12 +43,30 @@ function latestAwaitingTeamRunId(project: LoadedProject): string | null {
   return latest?.id ?? null;
 }
 
-function statusForEvent(name: string, payload: Record<string, unknown>): LoadedProject["status"] | null {
+type RunMode = "team" | "mention" | "iterate";
+
+function statusForEvent(
+  name: string,
+  payload: Record<string, unknown>,
+  mode: RunMode,
+): LoadedProject["status"] | null {
   if (name === "run.started") {
-    return "planning";
+    if (mode === "mention") {
+      return null;
+    }
+
+    return mode === "iterate" ? "iterating" : "planning";
   }
 
   if (name === "step.started") {
+    if (mode === "mention") {
+      return null;
+    }
+
+    if (mode === "iterate") {
+      return "iterating";
+    }
+
     if (payload.role === "leader") {
       return "planning";
     }
@@ -59,11 +79,11 @@ function statusForEvent(name: string, payload: Record<string, unknown>): LoadedP
   }
 
   if (name === "run.completed") {
-    return "ready";
+    return mode === "mention" ? null : "ready";
   }
 
   if (name === "step.failed" || name === "run.failed") {
-    return "failed";
+    return mode === "mention" ? null : "failed";
   }
 
   return null;
@@ -76,9 +96,12 @@ export function WorkspaceShell() {
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const activeGenerationRef = useRef(0);
   const generationRef = useRef(0);
   const runActiveRef = useRef(false);
+  const restoreActiveRef = useRef(false);
 
   async function refreshProject(activeIdentity: ProjectIdentity, generation: number) {
     const refreshed = await loadProject(activeIdentity);
@@ -88,14 +111,19 @@ export function WorkspaceShell() {
     }
   }
 
-  function receiveEvent(generation: number, name: string, data: unknown) {
+  function receiveEvent(
+    generation: number,
+    mode: RunMode,
+    name: string,
+    data: unknown,
+  ) {
     if (generation !== activeGenerationRef.current) {
       return;
     }
 
     const payload = eventData(data);
     setEvents((current) => [...current, { name, data: payload }]);
-    const nextStatus = statusForEvent(name, payload);
+    const nextStatus = statusForEvent(name, payload, mode);
 
     if (nextStatus) {
       setProject((current) => current ? { ...current, status: nextStatus } : current);
@@ -159,13 +187,18 @@ export function WorkspaceShell() {
     setLoadError(null);
     setEvents([]);
     setApprovalRunId(null);
+    const mode: RunMode = parseFirstMention(request)
+      ? "mention"
+      : project?.status === "ready"
+        ? "iterate"
+        : "team";
 
     try {
       await startRun(
         identity.projectId,
         identity.ownerToken,
-        { mode: "team", request },
-        (name, data) => receiveEvent(generation, name, data),
+        { mode, request },
+        (name, data) => receiveEvent(generation, mode, name, data),
       );
     } catch {
       if (generation === activeGenerationRef.current) {
@@ -195,7 +228,7 @@ export function WorkspaceShell() {
         identity.projectId,
         identity.ownerToken,
         approvalRunId,
-        (name, data) => receiveEvent(generation, name, data),
+        (name, data) => receiveEvent(generation, "team", name, data),
       );
     } catch {
       if (generation === activeGenerationRef.current) {
@@ -205,6 +238,40 @@ export function WorkspaceShell() {
       if (generation === activeGenerationRef.current) {
         runActiveRef.current = false;
         setRunning(false);
+      }
+    }
+  }
+
+  async function restoreSelectedVersion(versionId: string) {
+    if (!identity || runActiveRef.current || restoreActiveRef.current) {
+      return;
+    }
+
+    const generation = ++generationRef.current;
+    activeGenerationRef.current = generation;
+    restoreActiveRef.current = true;
+    setRestoring(true);
+    setRestoreError(null);
+
+    try {
+      const restored = await restoreVersion(
+        identity.projectId,
+        identity.ownerToken,
+        versionId,
+      );
+
+      if (generation === activeGenerationRef.current) {
+        setProject(restored.project);
+      }
+    } catch (error) {
+      if (generation === activeGenerationRef.current) {
+        const message = error instanceof Error ? error.message : "恢复版本失败";
+        setRestoreError(`恢复版本失败：${message}`);
+      }
+    } finally {
+      if (generation === activeGenerationRef.current) {
+        restoreActiveRef.current = false;
+        setRestoring(false);
       }
     }
   }
@@ -234,7 +301,10 @@ export function WorkspaceShell() {
       <section aria-label="Application preview" className="preview-region">
         <PreviewPanel
           currentVersion={project?.currentVersion ?? 0}
+          onRestore={restoreSelectedVersion}
           projectTitle={title}
+          restoreError={restoreError}
+          restoring={restoring}
           versions={project?.versions ?? []}
         />
       </section>

@@ -8,6 +8,7 @@ const clientApi = vi.hoisted(() => ({
   approveRun: vi.fn(),
   createProject: vi.fn(),
   loadProject: vi.fn(),
+  restoreVersion: vi.fn(),
   startRun: vi.fn(),
 }));
 
@@ -45,10 +46,12 @@ describe("WorkspaceShell", () => {
     window.localStorage.clear();
     clientApi.createProject.mockReset();
     clientApi.loadProject.mockReset();
+    clientApi.restoreVersion.mockReset();
     clientApi.startRun.mockReset();
     clientApi.approveRun.mockReset();
     clientApi.createProject.mockResolvedValue(createdProject);
     clientApi.loadProject.mockResolvedValue(loadedProject);
+    clientApi.restoreVersion.mockResolvedValue({ project: loadedProject });
   });
 
   afterEach(() => {
@@ -365,5 +368,94 @@ describe("WorkspaceShell", () => {
       "srcdoc",
       expect.stringContaining("构建完成"),
     );
+  });
+
+  it("routes the first valid mention to the requested specialist", async () => {
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "@研究员 请分析目标用户" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenCalledWith(
+        "project-1",
+        "owner-token-1",
+        { mode: "mention", request: "@研究员 请分析目标用户" },
+        expect.any(Function),
+      );
+    });
+  });
+
+  it("routes a ready project without a mention to iteration", async () => {
+    clientApi.loadProject.mockResolvedValue({
+      ...loadedProject,
+      status: "ready",
+      currentVersion: 1,
+      versions: [{ id: "version-1", version: 1, title: "预约工具", html: "<h1>当前版本</h1>" }],
+    });
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "将预约表单改为双列布局" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenCalledWith(
+        "project-1",
+        "owner-token-1",
+        { mode: "iterate", request: "将预约表单改为双列布局" },
+        expect.any(Function),
+      );
+    });
+  });
+
+  it("restores a selected version through the API only once while it is running", async () => {
+    const restoring = deferred<{ project: LoadedProject }>();
+    clientApi.loadProject.mockResolvedValue({
+      ...loadedProject,
+      status: "ready",
+      currentVersion: 2,
+      versions: [
+        { id: "version-1", version: 1, title: "首版", html: "<h1>首版</h1>" },
+        { id: "version-2", version: 2, title: "第二版", html: "<h1>第二版</h1>" },
+      ],
+    });
+    clientApi.restoreVersion.mockReturnValue(restoring.promise);
+    render(<WorkspaceShell />);
+
+    await screen.findByTitle("Generated application");
+    fireEvent.click(screen.getByRole("button", { name: "版本" }));
+    const versionOne = screen.getByRole("button", { name: "V1" });
+    fireEvent.click(versionOne);
+    fireEvent.click(versionOne);
+
+    await waitFor(() => {
+      expect(clientApi.restoreVersion).toHaveBeenCalledTimes(1);
+      expect(clientApi.restoreVersion).toHaveBeenCalledWith(
+        "project-1",
+        "owner-token-1",
+        "version-1",
+      );
+    });
+
+    restoring.resolve({
+      project: {
+        ...loadedProject,
+        status: "ready",
+        currentVersion: 1,
+        versions: [
+          { id: "version-1", version: 1, title: "首版", html: "<h1>首版</h1>" },
+          { id: "version-2", version: 2, title: "第二版", html: "<h1>第二版</h1>" },
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Generated application")).toHaveAttribute(
+        "srcdoc",
+        expect.stringContaining("首版"),
+      );
+    });
   });
 });

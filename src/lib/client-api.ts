@@ -37,6 +37,11 @@ export type LoadedProject = ProjectInput & {
   versions?: ProjectVersion[];
 };
 
+export type RestoreVersionResult = {
+  version: ProjectVersion;
+  project: LoadedProject;
+};
+
 export type Fetcher = (
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -88,6 +93,20 @@ export async function loadProject(
   });
 
   return readJson<LoadedProject>(response);
+}
+
+export async function restoreVersion(
+  projectId: string,
+  ownerToken: string,
+  versionId: string,
+  fetcher: Fetcher = fetch,
+): Promise<RestoreVersionResult> {
+  const response = await fetcher(
+    `/api/projects/${projectId}/versions/${versionId}/restore`,
+    { method: "POST", headers: { "x-project-token": ownerToken } },
+  );
+
+  return readJson<RestoreVersionResult>(response);
 }
 
 function emitSseEvent(block: string, onEvent: RunEventHandler) {

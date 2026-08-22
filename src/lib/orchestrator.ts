@@ -8,6 +8,7 @@ import {
   type PrdArtifact,
 } from "@/lib/artifacts";
 import type { AgentContext, AgentOutput, AgentProvider } from "@/lib/provider";
+import { getRole } from "@/lib/roles";
 
 export type TeamStep = {
   role: RoleId | "reviewer";
@@ -36,6 +37,19 @@ type TeamRole = ExpectedRole | "reviewer";
 export type TeamRunCallbacks = {
   onStepStarted?: (role: TeamRole) => Promise<void> | void;
   onStepCompleted?: (step: TeamStep) => Promise<void> | void;
+};
+
+export type SpecialistStep = {
+  role: RoleId;
+  status: "completed";
+  summary: string;
+  artifact: ParsedArtifact;
+  suggestedNextAction?: string;
+};
+
+export type SpecialistRunCallbacks = {
+  onStepStarted?: (role: RoleId) => Promise<void> | void;
+  onStepCompleted?: (step: SpecialistStep) => Promise<void> | void;
 };
 
 const expectedArtifacts: Record<ExpectedRole, ParsedArtifact["type"]> = {
@@ -69,6 +83,56 @@ async function runRole(
 
   await callbacks?.onStepCompleted?.(step);
   return step;
+}
+
+async function runSpecialistRole(
+  provider: AgentProvider,
+  role: RoleId,
+  context: AgentContext,
+  callbacks?: SpecialistRunCallbacks,
+): Promise<SpecialistStep> {
+  await callbacks?.onStepStarted?.(role);
+  const output = await provider.generate(role, context);
+  const expectedType = getRole(role).artifactType;
+
+  if (output.artifact.type !== expectedType) {
+    throw new Error(`Expected ${expectedType} artifact from ${role}`);
+  }
+
+  const step: SpecialistStep = {
+    role,
+    status: "completed",
+    summary: output.summary,
+    artifact: parseArtifact(expectedType, output.artifact.content),
+    suggestedNextAction: output.suggestedNextAction,
+  };
+
+  await callbacks?.onStepCompleted?.(step);
+  return step;
+}
+
+export async function runMention(
+  provider: AgentProvider,
+  role: RoleId,
+  goal: string,
+  request: string,
+  callbacks?: SpecialistRunCallbacks,
+): Promise<SpecialistStep> {
+  return runSpecialistRole(provider, role, { goal, request, artifacts: [] }, callbacks);
+}
+
+export async function runIteration(
+  provider: AgentProvider,
+  goal: string,
+  request: string,
+  currentApp: AppArtifact,
+  callbacks?: TeamRunCallbacks,
+): Promise<TeamStep> {
+  return runRole(provider, "engineer", {
+    goal,
+    request,
+    artifacts: [currentApp],
+  }, callbacks);
 }
 
 export async function createTeamPlan(

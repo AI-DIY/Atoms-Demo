@@ -6,6 +6,7 @@ import {
   buildApprovedPlan,
   createTeamPlan,
 } from "@/lib/orchestrator";
+import * as orchestrator from "@/lib/orchestrator";
 import { parseArtifact } from "@/lib/artifacts";
 import { MockProvider } from "@/lib/providers/mock";
 
@@ -53,6 +54,16 @@ const roleOutputs: Partial<Record<RoleId, AgentOutput>> = {
       content: {
         title: "预约工具",
         html: validAppHtml,
+      },
+    },
+  },
+  research: {
+    summary: "已整理目标用户和风险假设。",
+    artifact: {
+      type: "research",
+      content: {
+        findings: ["用户需要更快完成预约确认"],
+        assumptions: ["用户愿意在线提交预约信息"],
       },
     },
   },
@@ -220,6 +231,67 @@ describe("team orchestration", () => {
       role: "reviewer",
       status: "completed",
     });
+  });
+});
+
+describe("specialist and iteration orchestration", () => {
+  it("calls only the mentioned specialist and preserves its own artifact", async () => {
+    const runMention = Reflect.get(orchestrator, "runMention") as
+      | ((
+          provider: AgentProvider,
+          role: RoleId,
+          goal: string,
+          request: string,
+        ) => Promise<{ role: RoleId; artifact: { type: string } }>)
+      | undefined;
+
+    expect(runMention).toBeTypeOf("function");
+    if (!runMention) {
+      return;
+    }
+
+    const provider = new RecordingProvider();
+    const result = await runMention(
+      provider,
+      "research",
+      "创建摄影预约工具",
+      "@研究员 请分析目标用户",
+    );
+
+    expect(provider.calls.map((call) => call.role)).toEqual(["research"]);
+    expect(result).toMatchObject({ role: "research", artifact: { type: "research" } });
+  });
+
+  it("calls only Engineer for an iteration and supplies the current app artifact", async () => {
+    const runIteration = Reflect.get(orchestrator, "runIteration") as
+      | ((
+          provider: AgentProvider,
+          goal: string,
+          request: string,
+          app: ReturnType<typeof parseArtifact>,
+        ) => Promise<{ role: string; artifact: { type: string } }>)
+      | undefined;
+
+    expect(runIteration).toBeTypeOf("function");
+    if (!runIteration) {
+      return;
+    }
+
+    const provider = new RecordingProvider();
+    const currentApp = parseArtifact("app", {
+      title: "当前预约工具",
+      html: validAppHtml,
+    });
+    const result = await runIteration(
+      provider,
+      "创建摄影预约工具",
+      "将按钮文案改得更清晰",
+      currentApp,
+    );
+
+    expect(provider.calls.map((call) => call.role)).toEqual(["engineer"]);
+    expect(provider.calls[0]?.context.artifacts).toEqual([currentApp]);
+    expect(result).toMatchObject({ role: "engineer", artifact: { type: "app" } });
   });
 });
 

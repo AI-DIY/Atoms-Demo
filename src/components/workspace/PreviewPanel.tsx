@@ -7,17 +7,23 @@ import { VersionPanel, type WorkspaceVersion } from "./VersionPanel";
 
 export function PreviewPanel({
   currentVersion = 0,
+  onRestore,
   projectTitle,
+  restoreError = null,
+  restoring = false,
   versions = [],
 }: {
   currentVersion?: number;
+  onRestore?: (versionId: string) => void;
   projectTitle: string;
+  restoreError?: string | null;
+  restoring?: boolean;
   versions?: WorkspaceVersion[];
 }) {
   const [selectedVersion, setSelectedVersion] = useState(currentVersion);
   const [selectedTab, setSelectedTab] = useState<"preview" | "code" | "versions">("preview");
-  const active = versions.find((version) => version.version === selectedVersion)
-    ?? versions.find((version) => version.version === currentVersion);
+  const activeVersion = onRestore ? currentVersion : selectedVersion;
+  const active = versions.find((version) => version.version === activeVersion);
   const safeHtml = useMemo(
     () => sanitizeGeneratedHtml(active?.html ?? ""),
     [active?.html],
@@ -28,6 +34,17 @@ export function PreviewPanel({
   }, [currentVersion]);
 
   function selectVersion(version: number) {
+    if (onRestore) {
+      const target = versions.find((item) => item.version === version);
+
+      if (target) {
+        setSelectedTab("preview");
+        onRestore(target.id);
+      }
+
+      return;
+    }
+
     setSelectedVersion(version);
     setSelectedTab("preview");
   }
@@ -68,8 +85,10 @@ export function PreviewPanel({
             <h3>版本历史</h3>
             <p>选择任一已保存版本以查看对应应用。</p>
             <VersionPanel
-              currentVersion={active?.version ?? currentVersion}
+              currentVersion={currentVersion}
+              error={restoreError}
               onSelect={selectVersion}
+              restoring={restoring}
               versions={versions}
             />
           </div>

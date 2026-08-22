@@ -159,4 +159,38 @@ describe("client project API", () => {
     );
     expect(events).toEqual([["run.completed", { versionId: "version-1" }]]);
   });
+
+  it("restores a version with the project token and preserves the server error body", async () => {
+    const restoreVersion = Reflect.get(
+      await import("@/lib/client-api"),
+      "restoreVersion",
+    ) as
+      | ((
+          projectId: string,
+          ownerToken: string,
+          versionId: string,
+          fetcher: typeof fetch,
+        ) => Promise<unknown>)
+      | undefined;
+
+    expect(restoreVersion).toBeTypeOf("function");
+    if (!restoreVersion) {
+      return;
+    }
+
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "Version not found" }), { status: 404 }),
+    );
+
+    await expect(
+      restoreVersion("project-1", "owner-token-1", "version-1", fetcher),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: JSON.stringify({ error: "Version not found" }),
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/projects/project-1/versions/version-1/restore",
+      { method: "POST", headers: { "x-project-token": "owner-token-1" } },
+    );
+  });
 });

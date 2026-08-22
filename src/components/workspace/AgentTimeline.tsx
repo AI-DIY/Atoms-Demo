@@ -31,6 +31,10 @@ function displayName(event: TimelineEvent) {
   return event.name.startsWith("run.") ? "团队运行" : "团队成员";
 }
 
+function eventSummary(event: TimelineEvent) {
+  return typeof event.data.summary === "string" ? event.data.summary : null;
+}
+
 export function AgentTimeline({ events }: { events: TimelineEvent[] }) {
   return (
     <section aria-label="智能体运行时间线" className="agent-timeline" style={{ minHeight: 178 }}>
@@ -66,14 +70,20 @@ export function AgentTimeline({ events }: { events: TimelineEvent[] }) {
               <div
                 className="timeline-copy"
                 style={{
-                  alignItems: "baseline",
-                  display: "flex",
-                  justifyContent: "space-between",
+                  display: "grid",
+                  gap: 4,
                   minWidth: 0,
                 }}
               >
-                <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName(event)}</strong>
-                <span style={{ color: "var(--muted)", fontSize: 10, whiteSpace: "nowrap" }}>{statusLabels[event.name] ?? "已更新"}</span>
+                <div style={{ alignItems: "baseline", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+                  <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName(event)}</strong>
+                  <span style={{ color: "var(--muted)", fontSize: 10, whiteSpace: "nowrap" }}>{statusLabels[event.name] ?? "已更新"}</span>
+                </div>
+                {eventSummary(event) ? (
+                  <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.45, margin: 0 }}>
+                    {eventSummary(event)}
+                  </p>
+                ) : null}
               </div>
             </li>
           ))}
