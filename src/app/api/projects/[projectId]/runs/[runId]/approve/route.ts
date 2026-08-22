@@ -17,7 +17,7 @@ import {
   updateProjectStatus,
   updateRun,
 } from "@/lib/repository";
-import { encodeRunEvent, type RunEventName } from "@/lib/run-events";
+import { streamRunEvents, type RunEventEmitter } from "@/lib/run-events";
 
 const storedPlan = z.object({
   goal: z.string().trim().min(1).max(2_000),
@@ -30,16 +30,6 @@ const storedPlan = z.object({
 type RouteContext = {
   params: Promise<{ projectId: string; runId: string }>;
 };
-
-function sseResponse(events: string[]) {
-  return new Response(events.join(""), {
-    headers: {
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "content-type": "text/event-stream; charset=utf-8",
-    },
-  });
-}
 
 function notFoundResponse() {
   return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -80,12 +70,8 @@ function persistentCallbacks(
   projectId: string,
   ownerToken: string,
   runId: string,
-  events: string[],
+  emit: RunEventEmitter,
 ): TeamRunCallbacks {
-  const emit = (name: RunEventName, data: unknown) => {
-    events.push(encodeRunEvent(name, data));
-  };
-
   return {
     onStepStarted(role) {
       emit("step.started", { runId, role });
@@ -146,35 +132,33 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
   }
 
-  const events: string[] = [];
+  return streamRunEvents(run.id, async (emit) => {
+    emit("run.started", { runId: run.id, mode: run.mode });
 
-  try {
-    await updateRun(projectId, ownerToken, run.id, { status: "building" });
-    await updateProjectStatus(projectId, ownerToken, "building");
-    const result = await buildApprovedPlan(
-      provider,
-      plan,
-      persistentCallbacks(projectId, ownerToken, run.id, events),
-    );
-    const version = await createVersion(projectId, ownerToken, {
-      title: result.app.content.title,
-      html: result.app.content.html,
-      sourceRunId: run.id,
-    });
+    try {
+      await updateRun(projectId, ownerToken, run.id, { status: "building" });
+      await updateProjectStatus(projectId, ownerToken, "building");
+      const result = await buildApprovedPlan(
+        provider,
+        plan,
+        persistentCallbacks(projectId, ownerToken, run.id, emit),
+      );
+      const version = await createVersion(projectId, ownerToken, {
+        title: result.app.content.title,
+        html: result.app.content.html,
+        sourceRunId: run.id,
+      });
 
-    await completeRun(projectId, ownerToken, run.id, { status: "completed" });
-    await updateProjectStatus(projectId, ownerToken, "ready");
-    events.push(encodeRunEvent("run.completed", { runId: run.id, versionId: version.id }));
-
-    return sseResponse(events);
-  } catch (error) {
-    await completeRun(projectId, ownerToken, run.id, {
-      status: "failed",
-      errorCode: "build_failed",
-    });
-    await updateProjectStatus(projectId, ownerToken, "failed");
-    events.push(encodeRunEvent("run.failed", { runId: run.id, error: errorMessage(error) }));
-
-    return sseResponse(events);
-  }
+      await completeRun(projectId, ownerToken, run.id, { status: "completed" });
+      await updateProjectStatus(projectId, ownerToken, "ready");
+      emit("run.completed", { runId: run.id, versionId: version.id });
+    } catch (error) {
+      await completeRun(projectId, ownerToken, run.id, {
+        status: "failed",
+        errorCode: "build_failed",
+      });
+      await updateProjectStatus(projectId, ownerToken, "failed");
+      emit("run.failed", { runId: run.id, error: errorMessage(error) });
+    }
+  });
 }

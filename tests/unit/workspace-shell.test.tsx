@@ -316,6 +316,7 @@ describe("WorkspaceShell", () => {
     };
     clientApi.loadProject
       .mockResolvedValueOnce(loadedProject)
+      .mockResolvedValueOnce({ ...loadedProject, status: "awaiting_approval" })
       .mockResolvedValueOnce(completedProject);
     clientApi.startRun.mockImplementation(
       async (
@@ -362,7 +363,7 @@ describe("WorkspaceShell", () => {
         "run-1",
         expect.any(Function),
       );
-      expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
+      expect(clientApi.loadProject).toHaveBeenCalledTimes(3);
     });
     expect(screen.getByTitle("Generated application")).toHaveAttribute(
       "srcdoc",
@@ -385,6 +386,76 @@ describe("WorkspaceShell", () => {
         expect.any(Function),
       );
     });
+  });
+
+  it("刷新 mention 完成后已持久化的用户和专家消息", async () => {
+    const request = "@研究员 请分析目标用户";
+    clientApi.loadProject
+      .mockResolvedValueOnce(loadedProject)
+      .mockResolvedValueOnce({
+        ...loadedProject,
+        messages: [
+          { id: "message-user", role: "user", kind: "user", content: request },
+          {
+            id: "message-research",
+            role: "research",
+            kind: "assistant",
+            content: "已整理目标用户的初步研究假设。",
+          },
+        ],
+      });
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.completed", { runId: "mention-run" });
+      },
+    );
+
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: request } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    expect(await screen.findByText(request)).toBeInTheDocument();
+    expect(screen.getByText("已整理目标用户的初步研究假设。")).toBeInTheDocument();
+    expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
+  });
+
+  it("刷新等待审批后已持久化的团队问题", async () => {
+    const request = "为摄影师创建预约与报价工具";
+    clientApi.loadProject
+      .mockResolvedValueOnce(loadedProject)
+      .mockResolvedValueOnce({
+        ...loadedProject,
+        status: "awaiting_approval",
+        messages: [
+          { id: "message-user", role: "user", kind: "user", content: request },
+        ],
+      });
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.awaiting_approval", { runId: "team-run" });
+      },
+    );
+
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: request } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    expect(await screen.findByText(request)).toBeInTheDocument();
+    expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
   });
 
   it("routes a ready project without a mention to iteration", async () => {

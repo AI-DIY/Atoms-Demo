@@ -194,6 +194,45 @@ export async function createRun(
   });
 }
 
+export async function createRunWithMessage(
+  projectId: string,
+  ownerToken: string,
+  runInput: RunInput,
+  messageInput: MessageInput,
+) {
+  return prisma.$transaction(async (transaction) => {
+    const project = await transaction.project.findFirst({
+      where: { id: projectId, ownerToken },
+    });
+
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const run = await transaction.run.create({
+      data: {
+        projectId,
+        mode: runInput.mode,
+        status: runInput.status,
+        planJson: runInput.planJson,
+        errorCode: runInput.errorCode,
+      },
+    });
+
+    await transaction.message.create({
+      data: {
+        projectId,
+        role: messageInput.role,
+        kind: messageInput.kind,
+        content: messageInput.content,
+        mention: messageInput.mention,
+      },
+    });
+
+    return run;
+  });
+}
+
 export async function getRun(projectId: string, ownerToken: string, runId: string) {
   await requireOwnedProject(projectId, ownerToken);
 
@@ -301,9 +340,16 @@ export async function restoreVersion(
   versionId: string,
 ) {
   return withProjectVersionLock(projectId, async () => {
-    await requireOwnedProject(projectId, ownerToken);
-
     return prisma.$transaction(async (transaction) => {
+      const ownedProject = await transaction.project.findFirst({
+        where: { id: projectId, ownerToken },
+        select: { id: true },
+      });
+
+      if (!ownedProject) {
+        throw new Error("Project not found");
+      }
+
       const version = await transaction.appVersion.findFirst({
         where: { id: versionId, projectId },
       });
@@ -325,7 +371,16 @@ export async function restoreVersion(
         },
       });
 
-      return version;
+      const project = await transaction.project.findUnique({
+        where: { id: projectId },
+        select: projectSelect,
+      });
+
+      if (!project) {
+        throw new Error("Project not found");
+      }
+
+      return { version, project };
     });
   });
 }

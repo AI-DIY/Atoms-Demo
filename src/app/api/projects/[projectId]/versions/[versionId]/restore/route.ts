@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProject, restoreVersion } from "@/lib/repository";
+import { restoreVersion } from "@/lib/repository";
 
 type RouteContext = {
   params: Promise<{ projectId: string; versionId: string }>;
@@ -19,11 +19,9 @@ export async function POST(request: Request, { params }: RouteContext) {
   const { projectId, versionId } = await params;
 
   try {
-    await getProject(projectId, ownerToken);
-    const version = await restoreVersion(projectId, ownerToken, versionId);
-    const project = await getProject(projectId, ownerToken);
+    const restored = await restoreVersion(projectId, ownerToken, versionId);
 
-    return NextResponse.json({ version, project });
+    return NextResponse.json(restored);
   } catch (error) {
     if (error instanceof Error && error.message === "Project not found") {
       return notFoundResponse("Project not found");

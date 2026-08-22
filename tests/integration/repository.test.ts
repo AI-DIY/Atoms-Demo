@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/server/prisma";
 import {
   appendMessage,
   completeRun,
   createProject,
   createRun,
+  createRunWithMessage,
   createRunStep,
   createVersion,
   getProject,
@@ -86,7 +87,8 @@ describe("project repository", () => {
     const loaded = await getProject(project.id, project.ownerToken);
 
     expect(beforeRestore.currentVersion).toBe(2);
-    expect(restored.version).toBe(1);
+    expect(restored.version.version).toBe(1);
+    expect(restored.project.currentVersion).toBe(1);
     expect(loaded.currentVersion).toBe(1);
     expect(loaded.versions).toHaveLength(2);
     expect(loaded.status).toBe("draft");
@@ -125,6 +127,67 @@ describe("project repository", () => {
     await expect(
       updateProjectStatus(project.id, "wrong-token", "ready"),
     ).rejects.toThrow("Project not found");
+  });
+
+  it("rolls back a run and its user message together when the message write fails", async () => {
+    const project = await createProject({
+      title: "原子运行测试",
+      goal: "运行与用户消息必须一起创建或一起回滚",
+    });
+    const originalTransaction = prisma.$transaction.bind(prisma) as unknown as (
+      callback: (transaction: typeof prisma) => Promise<unknown>,
+    ) => Promise<unknown>;
+    const transactionSpy = vi.spyOn(prisma, "$transaction").mockImplementation(
+      (async (callback: unknown) => originalTransaction(async (transaction) => {
+        const failingMessage = new Proxy(transaction.message, {
+          get(target, property) {
+            if (property === "create") {
+              return async () => {
+                throw new Error("Message write failed");
+              };
+            }
+
+            return Reflect.get(target, property);
+          },
+        });
+        const failingTransaction = new Proxy(transaction, {
+          get(target, property) {
+            return property === "message"
+              ? failingMessage
+              : Reflect.get(target, property);
+          },
+        }) as typeof prisma;
+
+        return (callback as (client: typeof prisma) => Promise<unknown>)(failingTransaction);
+      })) as typeof prisma.$transaction,
+    );
+
+    try {
+      await expect(
+        createRunWithMessage(
+          project.id,
+          project.ownerToken,
+          { mode: "team", status: "planning" },
+          {
+            role: "user",
+            kind: "user",
+            content: "为摄影师创建预约与报价工具",
+          },
+        ),
+      ).rejects.toThrow("Message write failed");
+    } finally {
+      transactionSpy.mockRestore();
+      Object.defineProperty(prisma, "$transaction", {
+        configurable: true,
+        value: originalTransaction,
+        writable: true,
+      });
+    }
+
+    const loaded = await getProject(project.id, project.ownerToken);
+
+    expect(loaded.runs).toHaveLength(0);
+    expect(loaded.messages).toHaveLength(0);
   });
 
   it("persists messages and a completed run only for the project owner", async () => {

@@ -107,6 +107,66 @@ describe("version restoration", () => {
     expect((await getProject(project.id, project.ownerToken)).versions).toHaveLength(2);
   });
 
+  it("returns a restore snapshot that stays consistent when a queued version creation follows", async () => {
+    const project = await createProject({
+      title: "恢复快照测试",
+      goal: "恢复响应必须反映锁内一致的项目版本",
+    });
+    const first = await createVersion(project.id, project.ownerToken, {
+      title: "首版",
+      html: "<!doctype html><html><body>first version</body></html>",
+    });
+    await createVersion(project.id, project.ownerToken, {
+      title: "第二版",
+      html: "<!doctype html><html><body>second version</body></html>",
+    });
+
+    let releaseRestore!: () => void;
+    const restoreGate = new Promise<void>((resolve) => {
+      releaseRestore = resolve;
+    });
+    let markRestoreCommitted!: () => void;
+    const restoreCommitted = new Promise<void>((resolve) => {
+      markRestoreCommitted = resolve;
+    });
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    let pauseFirstTransaction = true;
+    const transactionSpy = vi.spyOn(prisma, "$transaction").mockImplementation(
+      (async (callback: unknown) => {
+        if (pauseFirstTransaction) {
+          pauseFirstTransaction = false;
+          markRestoreCommitted();
+          await restoreGate;
+        }
+
+        return (originalTransaction as (value: unknown) => Promise<unknown>)(callback);
+      }) as typeof prisma.$transaction,
+    );
+
+    try {
+      const restoreFirst = restoreVersion(project.id, project.ownerToken, first.id);
+      await restoreCommitted;
+      const createThird = createVersion(project.id, project.ownerToken, {
+        title: "第三版",
+        html: "<!doctype html><html><body>third version</body></html>",
+      });
+
+      releaseRestore();
+      const restored = await restoreFirst;
+      await createThird;
+
+      expect(restored.version.version).toBe(restored.project.currentVersion);
+      expect(restored.project.currentVersion).toBe(1);
+    } finally {
+      transactionSpy.mockRestore();
+      Object.defineProperty(prisma, "$transaction", {
+        configurable: true,
+        value: originalTransaction,
+        writable: true,
+      });
+    }
+  });
+
   it("hides invalid restore targets behind a 404", async () => {
     const route = await loadRestoreRoute();
 
@@ -193,6 +253,11 @@ describe("version restoration", () => {
       await Promise.all([createThird, restoreFirst]);
     } finally {
       transactionSpy.mockRestore();
+      Object.defineProperty(prisma, "$transaction", {
+        configurable: true,
+        value: originalTransaction,
+        writable: true,
+      });
     }
 
     const loaded = await getProject(project.id, project.ownerToken);

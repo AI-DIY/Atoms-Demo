@@ -12,14 +12,14 @@ import {
   appendMessage,
   chooseCurrentVersion,
   completeRun,
-  createRun,
+  createRunWithMessage,
   createRunStep,
   createVersion,
   getProject,
   updateProjectStatus,
   updateRun,
 } from "@/lib/repository";
-import { encodeRunEvent, type RunEventName } from "@/lib/run-events";
+import { streamRunEvents, type RunEventEmitter } from "@/lib/run-events";
 
 const runRequest = z.string().trim().min(1).max(2_000);
 const createRunInput = z.discriminatedUnion("mode", [
@@ -31,16 +31,6 @@ const createRunInput = z.discriminatedUnion("mode", [
 type RouteContext = {
   params: Promise<{ projectId: string }>;
 };
-
-function sseResponse(events: string[]) {
-  return new Response(events.join(""), {
-    headers: {
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "content-type": "text/event-stream; charset=utf-8",
-    },
-  });
-}
 
 function notFoundResponse() {
   return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -74,12 +64,8 @@ function persistentCallbacks(
   projectId: string,
   ownerToken: string,
   runId: string,
-  events: string[],
+  emit: RunEventEmitter,
 ): PersistentCallbacks {
-  const emit = (name: RunEventName, data: unknown) => {
-    events.push(encodeRunEvent(name, data));
-  };
-
   return {
     onStepStarted(role) {
       emit("step.started", { runId, role });
@@ -171,99 +157,97 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
   }
 
-  const run = await createRun(projectId, ownerToken, {
-    mode: input.data.mode,
-    status: input.data.mode === "team" ? "planning" : "running",
-  });
-  await appendMessage(projectId, ownerToken, {
-    role: "user",
-    kind: "user",
-    content: input.data.request,
-    mention: mentionedRole ?? undefined,
-  });
-  const events = [encodeRunEvent("run.started", { runId: run.id, mode: run.mode })];
+  const run = await createRunWithMessage(
+    projectId,
+    ownerToken,
+    {
+      mode: input.data.mode,
+      status: input.data.mode === "team" ? "planning" : "running",
+    },
+    {
+      role: "user",
+      kind: "user",
+      content: input.data.request,
+      mention: mentionedRole ?? undefined,
+    },
+  );
+  return streamRunEvents(run.id, async (emit) => {
+    emit("run.started", { runId: run.id, mode: run.mode });
 
-  if (input.data.mode === "mention") {
-    try {
-      await runMention(
-        provider,
-        mentionedRole!,
-        project.goal,
-        input.data.request,
-        persistentCallbacks(projectId, ownerToken, run.id, events),
-      );
-      await completeRun(projectId, ownerToken, run.id, { status: "completed" });
-      events.push(encodeRunEvent("run.completed", { runId: run.id }));
+    if (input.data.mode === "mention") {
+      try {
+        await runMention(
+          provider,
+          mentionedRole!,
+          project.goal,
+          input.data.request,
+          persistentCallbacks(projectId, ownerToken, run.id, emit),
+        );
+        await completeRun(projectId, ownerToken, run.id, { status: "completed" });
+        emit("run.completed", { runId: run.id });
+      } catch {
+        await completeRun(projectId, ownerToken, run.id, {
+          status: "failed",
+          errorCode: "mention_failed",
+        });
+        emit("run.failed", { runId: run.id, error: "运行失败" });
+      }
 
-      return sseResponse(events);
-    } catch {
-      await completeRun(projectId, ownerToken, run.id, {
-        status: "failed",
-        errorCode: "mention_failed",
-      });
-      events.push(encodeRunEvent("run.failed", { runId: run.id, error: "运行失败" }));
-
-      return sseResponse(events);
+      return;
     }
-  }
 
-  if (input.data.mode === "iterate") {
+    if (input.data.mode === "iterate") {
+      try {
+        await updateProjectStatus(projectId, ownerToken, "iterating");
+        const step = await runIteration(
+          provider,
+          project.goal,
+          input.data.request,
+          currentApp!,
+          persistentCallbacks(projectId, ownerToken, run.id, emit),
+        );
+        const app = step.artifact as AppArtifact;
+        const version = await createVersion(projectId, ownerToken, {
+          title: app.content.title,
+          html: app.content.html,
+          sourceRunId: run.id,
+        });
+
+        await completeRun(projectId, ownerToken, run.id, { status: "completed" });
+        await updateProjectStatus(projectId, ownerToken, "ready");
+        emit("run.completed", { runId: run.id, versionId: version.id });
+      } catch {
+        await completeRun(projectId, ownerToken, run.id, {
+          status: "failed",
+          errorCode: "iteration_failed",
+        });
+        await updateProjectStatus(projectId, ownerToken, "failed");
+        emit("run.failed", { runId: run.id, error: "运行失败" });
+      }
+
+      return;
+    }
+
     try {
-      await updateProjectStatus(projectId, ownerToken, "iterating");
-      const step = await runIteration(
+      const plan = await createTeamPlan(
         provider,
-        project.goal,
         input.data.request,
-        currentApp!,
-        persistentCallbacks(projectId, ownerToken, run.id, events),
+        persistentCallbacks(projectId, ownerToken, run.id, emit),
       );
-      const app = step.artifact as AppArtifact;
-      const version = await createVersion(projectId, ownerToken, {
-        title: app.content.title,
-        html: app.content.html,
-        sourceRunId: run.id,
+
+      await updateRun(projectId, ownerToken, run.id, {
+        status: "awaiting_approval",
+        planJson: JSON.stringify({ goal: plan.goal, artifact: plan.artifact }),
       });
-
-      await completeRun(projectId, ownerToken, run.id, { status: "completed" });
-      await updateProjectStatus(projectId, ownerToken, "ready");
-      events.push(encodeRunEvent("run.completed", { runId: run.id, versionId: version.id }));
-
-      return sseResponse(events);
-    } catch {
+      await updateProjectStatus(projectId, ownerToken, "awaiting_approval");
+      emit("run.awaiting_approval", { runId: run.id });
+    } catch (error) {
       await completeRun(projectId, ownerToken, run.id, {
         status: "failed",
-        errorCode: "iteration_failed",
+        errorCode: "plan_failed",
       });
       await updateProjectStatus(projectId, ownerToken, "failed");
-      events.push(encodeRunEvent("run.failed", { runId: run.id, error: "运行失败" }));
-
-      return sseResponse(events);
+      emit("run.failed", { runId: run.id, error: errorMessage(error) });
     }
-  }
-
-  try {
-    const plan = await createTeamPlan(
-      provider,
-      input.data.request,
-      persistentCallbacks(projectId, ownerToken, run.id, events),
-    );
-
-    await updateRun(projectId, ownerToken, run.id, {
-      status: "awaiting_approval",
-      planJson: JSON.stringify({ goal: plan.goal, artifact: plan.artifact }),
-    });
-    await updateProjectStatus(projectId, ownerToken, "awaiting_approval");
-    events.push(encodeRunEvent("run.awaiting_approval", { runId: run.id }));
-
-    return sseResponse(events);
-  } catch (error) {
-    await completeRun(projectId, ownerToken, run.id, {
-      status: "failed",
-      errorCode: "plan_failed",
-    });
-    await updateProjectStatus(projectId, ownerToken, "failed");
-    events.push(encodeRunEvent("run.failed", { runId: run.id, error: errorMessage(error) }));
-
-    return sseResponse(events);
-  }
+  });
 }

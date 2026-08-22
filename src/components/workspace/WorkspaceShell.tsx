@@ -133,11 +133,14 @@ export function WorkspaceShell() {
       setApprovalRunId(payload.runId);
     }
 
-    if (name === "run.completed" && typeof payload.versionId === "string" && identity) {
+    if (name === "run.completed") {
       setApprovalRunId(null);
+    }
+
+    if ((name === "run.awaiting_approval" || name === "run.completed") && identity) {
       void refreshProject(identity, generation).catch(() => {
         if (generation === activeGenerationRef.current) {
-          setLoadError("版本已生成，但项目刷新失败，请刷新页面后重试。");
+          setLoadError("项目状态已更新，但项目刷新失败，请刷新页面后重试。");
         }
       });
     }
