@@ -10,12 +10,12 @@ import {
 } from "@/lib/orchestrator";
 import {
   appendMessage,
+  claimRunForApproval,
   completeRun,
   createRunStep,
   createVersion,
   getRun,
   updateProjectStatus,
-  updateRun,
 } from "@/lib/repository";
 import { streamRunEvents, type RunEventEmitter } from "@/lib/run-events";
 
@@ -132,11 +132,14 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
   }
 
+  if (!await claimRunForApproval(projectId, ownerToken, run.id)) {
+    return NextResponse.json({ error: "Run is not awaiting approval" }, { status: 409 });
+  }
+
   return streamRunEvents(run.id, async (emit) => {
     emit("run.started", { runId: run.id, mode: run.mode });
 
     try {
-      await updateRun(projectId, ownerToken, run.id, { status: "building" });
       await updateProjectStatus(projectId, ownerToken, "building");
       const result = await buildApprovedPlan(
         provider,

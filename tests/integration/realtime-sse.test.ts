@@ -28,8 +28,11 @@ class DelayedFirstResponseProvider implements AgentProvider {
   private readonly firstGenerate = deferred();
   private readonly releaseFirstGenerate = deferred();
   private delayed = false;
+  generateCalls = 0;
 
   async generate(role: Parameters<AgentProvider["generate"]>[0], context: AgentContext): Promise<AgentOutput> {
+    this.generateCalls += 1;
+
     if (!this.delayed) {
       this.delayed = true;
       this.firstGenerate.resolve();
@@ -227,6 +230,90 @@ describe("realtime run event streams", () => {
       expect(unhandledRejections).toEqual([]);
     } finally {
       process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
+  it("claims a team approval before streaming so concurrent approvals cannot build twice", async () => {
+    const provider = new DelayedFirstResponseProvider();
+    getAgentProvider.mockReturnValue(provider);
+    const project = await createProject({
+      title: "并发审批测试",
+      goal: "为摄影师创建预约与报价工具",
+    });
+    const run = await createRun(project.id, project.ownerToken, {
+      mode: "team",
+      status: "awaiting_approval",
+      planJson: plannedRunJson(project.goal),
+    });
+    const firstBuildingUpdate = deferred();
+    const releaseFirstBuildingUpdate = deferred();
+    const originalRunUpdate = prisma.run.update.bind(prisma.run);
+    let blockFirstBuildingUpdate = true;
+    const runUpdateSpy = vi.spyOn(prisma.run, "update").mockImplementation(
+      (async (args: Parameters<typeof prisma.run.update>[0]) => {
+        if (blockFirstBuildingUpdate && args.data.status === "building") {
+          blockFirstBuildingUpdate = false;
+          firstBuildingUpdate.resolve();
+          await releaseFirstBuildingUpdate.promise;
+        }
+
+        return originalRunUpdate(args);
+      }) as unknown as typeof prisma.run.update,
+    );
+    const routeContext = { params: Promise.resolve({ projectId: project.id, runId: run.id }) };
+    const approvalRequest = () => new Request(
+      `http://localhost/api/projects/${project.id}/runs/${run.id}/approve`,
+      { method: "POST", headers: { "x-project-token": project.ownerToken } },
+    );
+    let firstResponse: Response | undefined;
+    let secondResponse: Response | undefined;
+    let firstEventsPromise: Promise<string> | undefined;
+
+    try {
+      firstResponse = await approveRun(approvalRequest(), routeContext);
+      await Promise.race([
+        provider.waitForFirstGenerate(),
+        firstBuildingUpdate.promise,
+      ]);
+
+      secondResponse = await approveRun(approvalRequest(), routeContext);
+
+      expect(secondResponse.status).toBe(409);
+      expect(provider.generateCalls).toBe(1);
+
+      releaseFirstBuildingUpdate.resolve();
+      provider.release();
+      firstEventsPromise = firstResponse.text();
+      const firstEvents = await firstEventsPromise;
+      const loaded = await getProject(project.id, project.ownerToken);
+
+      expect(firstEvents).toContain("event: run.completed");
+      expect(loaded.runs[0]?.steps.map((step) => step.role)).toEqual([
+        "pm",
+        "architect",
+        "engineer",
+        "reviewer",
+      ]);
+      expect(loaded.versions).toHaveLength(1);
+      expect(loaded.messages.map((message) => message.role)).toEqual([
+        "pm",
+        "architect",
+        "engineer",
+        "reviewer",
+      ]);
+    } finally {
+      releaseFirstBuildingUpdate.resolve();
+      provider.release();
+      await Promise.all([
+        firstEventsPromise ?? firstResponse?.text() ?? Promise.resolve(),
+        secondResponse?.text() ?? Promise.resolve(),
+      ]);
+      runUpdateSpy.mockRestore();
+      Object.defineProperty(prisma.run, "update", {
+        configurable: true,
+        value: originalRunUpdate,
+        writable: true,
+      });
     }
   });
 });

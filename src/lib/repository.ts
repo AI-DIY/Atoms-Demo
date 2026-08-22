@@ -248,6 +248,24 @@ export async function getRun(projectId: string, ownerToken: string, runId: strin
   return run;
 }
 
+export async function claimRunForApproval(
+  projectId: string,
+  ownerToken: string,
+  runId: string,
+) {
+  const claimed = await prisma.run.updateMany({
+    where: {
+      id: runId,
+      projectId,
+      status: "awaiting_approval",
+      project: { ownerToken },
+    },
+    data: { status: "building" },
+  });
+
+  return claimed.count === 1;
+}
+
 export async function updateRun(
   projectId: string,
   ownerToken: string,
