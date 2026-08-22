@@ -31,6 +31,12 @@ export type ApprovedTeamBuild = ApprovedTeamPlan & {
 };
 
 type ExpectedRole = "leader" | "pm" | "architect" | "engineer";
+type TeamRole = ExpectedRole | "reviewer";
+
+export type TeamRunCallbacks = {
+  onStepStarted?: (role: TeamRole) => Promise<void> | void;
+  onStepCompleted?: (step: TeamStep) => Promise<void> | void;
+};
 
 const expectedArtifacts: Record<ExpectedRole, ParsedArtifact["type"]> = {
   leader: "plan",
@@ -43,7 +49,9 @@ async function runRole(
   provider: AgentProvider,
   role: ExpectedRole,
   context: AgentContext,
+  callbacks?: TeamRunCallbacks,
 ): Promise<TeamStep> {
+  await callbacks?.onStepStarted?.(role);
   const output: AgentOutput = await provider.generate(role, context);
   const expectedType = expectedArtifacts[role];
 
@@ -51,24 +59,28 @@ async function runRole(
     throw new Error(`Expected ${expectedType} artifact from ${role}`);
   }
 
-  return {
+  const step: TeamStep = {
     role,
     status: "completed",
     summary: output.summary,
     artifact: parseArtifact(expectedType, output.artifact.content),
     suggestedNextAction: output.suggestedNextAction,
   };
+
+  await callbacks?.onStepCompleted?.(step);
+  return step;
 }
 
 export async function createTeamPlan(
   provider: AgentProvider,
   goal: string,
+  callbacks?: TeamRunCallbacks,
 ): Promise<TeamPlan> {
   const leaderStep = await runRole(provider, "leader", {
     goal,
     request: "制定默认交付团队计划，并说明需要用户确认的风险。",
     artifacts: [],
-  });
+  }, callbacks);
 
   return {
     goal,
@@ -89,6 +101,7 @@ export function approvePlan(plan: TeamPlan): ApprovedTeamPlan {
 export async function buildApprovedPlan(
   provider: AgentProvider,
   plan: TeamPlan,
+  callbacks?: TeamRunCallbacks,
 ): Promise<ApprovedTeamBuild> {
   if (!plan.approved) {
     throw new Error("Team plan must be approved before building");
@@ -99,19 +112,20 @@ export async function buildApprovedPlan(
     goal: plan.goal,
     request: "根据已批准团队计划整理产品需求和验收标准。",
     artifacts: [validatedPlan],
-  });
+  }, callbacks);
   const architectStep = await runRole(provider, "architect", {
     goal: plan.goal,
     request: "根据已批准的计划和产品需求确定页面、状态与约束。",
     artifacts: [validatedPlan, pmStep.artifact],
-  });
+  }, callbacks);
   const engineerStep = await runRole(provider, "engineer", {
     goal: plan.goal,
     request: "根据已验证的需求与架构交付可交互的单文件网页应用。",
     artifacts: [validatedPlan, pmStep.artifact, architectStep.artifact],
-  });
+  }, callbacks);
 
   // Reviewer is deterministic: it validates the already-sanitized app without a model call.
+  await callbacks?.onStepStarted?.("reviewer");
   const app = parseArtifact("app", engineerStep.artifact.content);
   const prd = pmStep.artifact as PrdArtifact;
   assertAcceptanceCoverage(prd, app);
@@ -121,6 +135,7 @@ export async function buildApprovedPlan(
     summary: `已完成应用产物结构、安全边界与 ${prd.content.acceptance.length} 条验收条件覆盖校验。`,
     artifact: app,
   };
+  await callbacks?.onStepCompleted?.(reviewerStep);
 
   return {
     ...plan,

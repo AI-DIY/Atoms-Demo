@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ProjectStatus } from "@/lib/domain";
 import { prisma } from "@/server/prisma";
 
 type ProjectInput = {
@@ -36,6 +37,12 @@ type RunStepInput = {
 
 type CompleteRunInput = {
   status: string;
+  errorCode?: string;
+};
+
+type UpdateRunInput = {
+  status?: string;
+  planJson?: string;
   errorCode?: string;
 };
 
@@ -155,6 +162,20 @@ export async function appendMessage(
   });
 }
 
+export async function updateProjectStatus(
+  projectId: string,
+  ownerToken: string,
+  status: ProjectStatus,
+) {
+  await requireOwnedProject(projectId, ownerToken);
+
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { status },
+    select: projectSelect,
+  });
+}
+
 export async function createRun(
   projectId: string,
   ownerToken: string,
@@ -170,6 +191,35 @@ export async function createRun(
       planJson: input.planJson,
       errorCode: input.errorCode,
     },
+  });
+}
+
+export async function getRun(projectId: string, ownerToken: string, runId: string) {
+  await requireOwnedProject(projectId, ownerToken);
+
+  const run = await prisma.run.findFirst({
+    where: { id: runId, projectId },
+    include: { steps: { orderBy: { id: "asc" } } },
+  });
+
+  if (!run) {
+    throw new Error("Run not found");
+  }
+
+  return run;
+}
+
+export async function updateRun(
+  projectId: string,
+  ownerToken: string,
+  runId: string,
+  input: UpdateRunInput,
+) {
+  await requireOwnedRun(projectId, ownerToken, runId);
+
+  return prisma.run.update({
+    where: { id: runId },
+    data: input,
   });
 }
 

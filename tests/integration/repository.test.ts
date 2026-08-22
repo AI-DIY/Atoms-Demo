@@ -10,6 +10,7 @@ import {
   createVersion,
   getProject,
   restoreVersion,
+  updateProjectStatus,
 } from "@/lib/repository";
 
 describe("project repository", () => {
@@ -104,6 +105,25 @@ describe("project repository", () => {
         kind: "assistant",
         content: "不可写入",
       }),
+    ).rejects.toThrow("Project not found");
+  });
+
+  it("updates project status only for the owner without returning the owner token", async () => {
+    const project = await createProject({
+      title: "状态测试",
+      goal: "创建一个可交互的预约工具",
+    });
+
+    const updated = await updateProjectStatus(
+      project.id,
+      project.ownerToken,
+      "awaiting_approval",
+    );
+
+    expect(updated).toMatchObject({ status: "awaiting_approval" });
+    expect(updated).not.toHaveProperty("ownerToken");
+    await expect(
+      updateProjectStatus(project.id, "wrong-token", "ready"),
     ).rejects.toThrow("Project not found");
   });
 
