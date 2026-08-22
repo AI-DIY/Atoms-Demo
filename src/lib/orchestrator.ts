@@ -1,9 +1,11 @@
 import type { RoleId } from "@/lib/domain";
 import {
+  assertAcceptanceCoverage,
   parseArtifact,
   type AppArtifact,
   type ParsedArtifact,
   type PlanArtifact,
+  type PrdArtifact,
 } from "@/lib/artifacts";
 import type { AgentContext, AgentOutput, AgentProvider } from "@/lib/provider";
 
@@ -111,10 +113,12 @@ export async function buildApprovedPlan(
 
   // Reviewer is deterministic: it validates the already-sanitized app without a model call.
   const app = parseArtifact("app", engineerStep.artifact.content);
+  const prd = pmStep.artifact as PrdArtifact;
+  assertAcceptanceCoverage(prd, app);
   const reviewerStep: TeamStep = {
     role: "reviewer",
     status: "completed",
-    summary: "已完成应用产物结构和安全边界校验。",
+    summary: `已完成应用产物结构、安全边界与 ${prd.content.acceptance.length} 条验收条件覆盖校验。`,
     artifact: app,
   };
 

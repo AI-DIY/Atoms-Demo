@@ -36,7 +36,7 @@ export const roles: readonly AgentRole[] = [
     icon: LayoutTemplate,
     artifactType: "prd",
     systemInstruction:
-      "你将目标整理为可验收的产品范围、用户、主流程和验收标准，避免超出单页应用的范围。",
+      "你将目标整理为可验收的产品范围、用户、主流程和验收标准，避免超出单页应用的范围。验收标准必须简短、自包含，并且不含 HTML 标记或引号。",
     aliases: ["产品经理", "PM", "pm"],
   },
   {
@@ -54,7 +54,7 @@ export const roles: readonly AgentRole[] = [
     icon: Wrench,
     artifactType: "app",
     systemInstruction:
-      "你只能交付一个不超过 50 KB 的完整 HTML 文档。HTML 必须不依赖外部资源、脚本、样式、字体或网络请求，并保留所需的内联交互。",
+      "你只能交付一个不超过 50 KB 的完整 HTML 文档。HTML 必须不依赖外部资源、脚本、样式、字体或网络请求，并保留所需的内联交互。对 PM 的每一条验收标准，必须在对应的 HTML 元素上添加完全相同的 data-acceptance 属性值。",
     aliases: ["工程师", "开发工程师", "engineer"],
   },
   {

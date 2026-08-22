@@ -7,9 +7,10 @@ import {
   createTeamPlan,
 } from "@/lib/orchestrator";
 import { parseArtifact } from "@/lib/artifacts";
+import { MockProvider } from "@/lib/providers/mock";
 
 const validAppHtml = `<!doctype html>
-<html lang="en"><head><title>Demo</title></head><body><main><h1>Booking tool</h1><button type="button">Create booking</button></main></body></html>`;
+<html lang="en"><head><title>Demo</title></head><body><main><h1>Booking tool</h1><button type="button" data-acceptance="可创建一条预约">Create booking</button></main></body></html>`;
 
 const roleOutputs: Partial<Record<RoleId, AgentOutput>> = {
   leader: {
@@ -165,6 +166,60 @@ describe("team orchestration", () => {
       "pm",
       "architect",
     ]);
+  });
+
+  it("fails before completing review when an app omits a PM acceptance marker", async () => {
+    const provider = new RecordingProvider();
+    const missingCoverageProvider: AgentProvider = {
+      async generate(role, context) {
+        if (role === "engineer") {
+          return {
+            summary: "未覆盖验收条件的应用",
+            artifact: {
+              type: "app",
+              content: {
+                title: "预约工具",
+                html: validAppHtml.replace(
+                  ' data-acceptance="可创建一条预约"',
+                  "",
+                ),
+              },
+            },
+          };
+        }
+
+        return provider.generate(role, context);
+      },
+    };
+    const plan = await createTeamPlan(
+      missingCoverageProvider,
+      "Build a photography booking tool",
+    );
+
+    await expect(
+      buildApprovedPlan(missingCoverageProvider, approvePlan(plan)),
+    ).rejects.toThrow("acceptance coverage");
+    expect(provider.calls.map((call) => call.role)).toEqual([
+      "leader",
+      "pm",
+      "architect",
+    ]);
+  });
+
+  it.each([
+    "为摄影师创建预约与报价工具",
+    "为内容团队创建内容日历",
+    "为销售团队创建客户线索看板",
+  ])("completes deterministic acceptance review for the standard MockProvider: %s", async (goal) => {
+    const provider = new MockProvider();
+    const plan = await createTeamPlan(provider, goal);
+
+    const result = await buildApprovedPlan(provider, approvePlan(plan));
+
+    expect(result.steps.at(-1)).toMatchObject({
+      role: "reviewer",
+      status: "completed",
+    });
   });
 });
 

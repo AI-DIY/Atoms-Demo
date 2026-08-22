@@ -33,12 +33,12 @@ const bookingAppHtml = `<!doctype html>
     @media (max-width: 680px) { form { grid-template-columns: 1fr; } }
   </style>
 </head>
-<body>
+<body data-acceptance="页面在桌面和移动屏幕可用">
   <header>
     <h1>摄影预约工作台</h1>
     <p>集中安排拍摄时间，快速跟进客户需求。</p>
   </header>
-  <form id="appointment-form">
+  <form id="appointment-form" data-acceptance="用户可以添加包含客户、日期和服务的预约">
     <input id="client" aria-label="客户姓名" required placeholder="客户姓名">
     <input id="date" aria-label="预约日期" required type="date">
     <input id="service" aria-label="拍摄服务" required placeholder="拍摄服务">
@@ -46,7 +46,7 @@ const bookingAppHtml = `<!doctype html>
   </form>
   <main>
     <h2>预约列表</h2>
-    <ul id="appointments" aria-live="polite"></ul>
+    <ul id="appointments" aria-live="polite" data-acceptance="用户可以删除任意一条预约"></ul>
   </main>
   <script>
     const form = document.querySelector('#appointment-form');
@@ -97,12 +97,12 @@ const contentCalendarAppHtml = `<!doctype html>
     @media (max-width: 680px) { form { grid-template-columns: 1fr; } }
   </style>
 </head>
-<body>
+<body data-acceptance="页面在桌面和移动屏幕可用">
   <header>
     <h1>内容日历</h1>
     <p>统一规划选题、发布日期和发布渠道。</p>
   </header>
-  <form id="content-form">
+  <form id="content-form" data-acceptance="用户可以添加包含标题、日期和渠道的内容计划">
     <input id="topic" aria-label="内容标题" required placeholder="内容标题">
     <input id="publish-date" aria-label="发布日期" required type="date">
     <input id="channel" aria-label="发布渠道" required placeholder="发布渠道">
@@ -110,7 +110,7 @@ const contentCalendarAppHtml = `<!doctype html>
   </form>
   <main>
     <h2>发布计划</h2>
-    <ul id="content-items" aria-live="polite"></ul>
+    <ul id="content-items" aria-live="polite" data-acceptance="用户可以删除任意一条内容计划"></ul>
   </main>
   <script>
     const form = document.querySelector('#content-form');
@@ -161,12 +161,12 @@ const leadBoardAppHtml = `<!doctype html>
     @media (max-width: 680px) { form { grid-template-columns: 1fr; } }
   </style>
 </head>
-<body>
+<body data-acceptance="页面在桌面和移动屏幕可用">
   <header>
     <h1>客户线索看板</h1>
     <p>记录潜在客户，清晰跟进每个销售阶段。</p>
   </header>
-  <form id="lead-form">
+  <form id="lead-form" data-acceptance="用户可以添加包含客户、联系人和阶段的线索">
     <input id="company" aria-label="客户名称" required placeholder="客户名称">
     <input id="contact" aria-label="联系人" required placeholder="联系人">
     <select id="stage" aria-label="线索阶段">
@@ -178,7 +178,7 @@ const leadBoardAppHtml = `<!doctype html>
   </form>
   <main>
     <h2>线索列表</h2>
-    <ul id="leads" aria-live="polite"></ul>
+    <ul id="leads" aria-live="polite" data-acceptance="用户可以删除任意一条线索"></ul>
   </main>
   <script>
     const form = document.querySelector('#lead-form');

@@ -61,6 +61,28 @@ export type ArchitectureArtifact = Extract<
 >;
 export type AppArtifact = Extract<ParsedArtifact, { type: "app" }>;
 
+const acceptanceMarker =
+  /\bdata-acceptance\s*=\s*(?:"([^"]*)"|'([^']*)')/giu;
+
+export function assertAcceptanceCoverage(
+  prd: PrdArtifact,
+  app: AppArtifact,
+): void {
+  const markers = new Set<string>();
+
+  for (const match of app.content.html.matchAll(acceptanceMarker)) {
+    markers.add((match[1] ?? match[2] ?? "").trim());
+  }
+
+  const missing = prd.content.acceptance.filter(
+    (criterion) => !markers.has(criterion),
+  );
+
+  if (missing.length > 0) {
+    throw new Error(`App acceptance coverage missing: ${missing.join(", ")}`);
+  }
+}
+
 export function parseArtifact<Type extends ArtifactType>(
   type: Type,
   content: unknown,
