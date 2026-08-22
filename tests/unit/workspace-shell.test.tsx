@@ -296,7 +296,12 @@ describe("WorkspaceShell", () => {
     clientApi.loadProject.mockResolvedValue({
       ...loadedProject,
       status: "awaiting_approval",
-      runs: [{ id: "claimed-run", mode: "team", status: "awaiting_approval" }],
+      runs: [{
+        id: "claimed-run",
+        mode: "team",
+        status: "awaiting_approval",
+        planJson: JSON.stringify({ goal: "为婚礼摄影师创建客户接待流程" }),
+      }],
       messages: [{ id: "message-1", role: "pm", kind: "assistant", content: "已有计划摘要" }],
     });
     clientApi.approveRun.mockImplementation(
@@ -321,7 +326,7 @@ describe("WorkspaceShell", () => {
       expect(clientApi.startRun).toHaveBeenCalledWith(
         "project-1",
         "owner-token-1",
-        { mode: "team", request: loadedProject.goal },
+        { mode: "team", request: "为婚礼摄影师创建客户接待流程" },
         expect.any(Function),
       );
     });

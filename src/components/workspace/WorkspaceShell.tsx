@@ -43,10 +43,31 @@ function latestAwaitingTeamRunId(project: LoadedProject): string | null {
   return latest?.id ?? null;
 }
 
+function storedPlanGoal(project: LoadedProject | null, runId: string): string | null {
+  const planJson = project?.runs?.find((run) => run.id === runId)?.planJson;
+
+  if (typeof planJson !== "string") {
+    return null;
+  }
+
+  try {
+    const plan: unknown = JSON.parse(planJson);
+
+    if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+      return null;
+    }
+
+    const goal = Reflect.get(plan, "goal");
+    return typeof goal === "string" && goal.trim().length > 0 ? goal : null;
+  } catch {
+    return null;
+  }
+}
+
 type RunMode = "team" | "mention" | "iterate";
 type FailedOperation =
   | { kind: "run"; mode: RunMode; request: string }
-  | { kind: "approve"; runId: string };
+  | { kind: "approve"; runId: string; request: string };
 
 function statusForEvent(
   name: string,
@@ -158,7 +179,7 @@ export function WorkspaceShell() {
         setLastFailedOperation({
           kind: "run",
           mode: "team",
-          request: project?.goal ?? defaultProject.goal,
+          request: failedOperation.request,
         });
       } else if (failedOperation) {
         setLastFailedOperation(failedOperation);
@@ -243,10 +264,15 @@ export function WorkspaceShell() {
     }
   }
 
-  async function approvePlan(runId = approvalRunId) {
+  async function approvePlan(runId = approvalRunId, capturedRequest?: string) {
     if (!identity || !runId || runActiveRef.current || restoreActiveRef.current) {
       return;
     }
+
+    const request = capturedRequest
+      ?? storedPlanGoal(project, runId)
+      ?? project?.goal
+      ?? defaultProject.goal;
 
     const generation = ++generationRef.current;
     activeGenerationRef.current = generation;
@@ -265,13 +291,13 @@ export function WorkspaceShell() {
           "team",
           name,
           data,
-          { kind: "approve", runId },
+          { kind: "approve", runId, request },
         ),
       );
     } catch (error) {
       if (generation === activeGenerationRef.current) {
         setLoadError(error instanceof Error ? error.message : "开始构建失败，请稍后重试。");
-        setLastFailedOperation({ kind: "approve", runId });
+        setLastFailedOperation({ kind: "approve", runId, request });
       }
     } finally {
       if (generation === activeGenerationRef.current) {
@@ -285,7 +311,7 @@ export function WorkspaceShell() {
     if (!lastFailedOperation) return;
 
     if (lastFailedOperation.kind === "approve") {
-      void approvePlan(lastFailedOperation.runId);
+      void approvePlan(lastFailedOperation.runId, lastFailedOperation.request);
       return;
     }
 

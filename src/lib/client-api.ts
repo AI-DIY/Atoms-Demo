@@ -19,6 +19,7 @@ export type ProjectRun = {
   id: string;
   mode: string;
   status: string;
+  planJson?: string | null;
   startedAt?: string;
   steps?: Array<{ role: string; status: string }>;
 };

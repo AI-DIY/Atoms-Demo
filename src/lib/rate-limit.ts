@@ -27,9 +27,9 @@ export function createRateLimiter(
     return attempts.filter((attempt) => attempt > earliestAllowed);
   }
 
-  function makeRoom(now: number) {
+  function makeRoom(now: number): boolean {
     if (attemptsByKey.size < maxKeys) {
-      return;
+      return true;
     }
 
     for (const [key, attempts] of attemptsByKey) {
@@ -42,13 +42,7 @@ export function createRateLimiter(
       }
     }
 
-    if (attemptsByKey.size >= maxKeys) {
-      const oldestKey = attemptsByKey.keys().next().value;
-
-      if (oldestKey !== undefined) {
-        attemptsByKey.delete(oldestKey);
-      }
-    }
+    return attemptsByKey.size < maxKeys;
   }
 
   return {
@@ -65,8 +59,8 @@ export function createRateLimiter(
         return false;
       }
 
-      if (!attemptsByKey.has(key)) {
-        makeRoom(now);
+      if (!attemptsByKey.has(key) && !makeRoom(now)) {
+        return false;
       }
 
       active.push(now);

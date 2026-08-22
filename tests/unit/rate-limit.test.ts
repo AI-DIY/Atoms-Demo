@@ -33,12 +33,22 @@ describe("createRateLimiter", () => {
     expect(limiter.allow("192.0.2.10", 0)).toBe(true);
     expect(limiter.allow("192.0.2.11", 0)).toBe(true);
     expect(limiter.allow("192.0.2.12", 0)).toBe(true);
-    expect(limiter.allow("192.0.2.13", 0)).toBe(true);
-    expect(limiter.size()).toBeLessThanOrEqual(3);
+    expect(limiter.allow("192.0.2.13", 0)).toBe(false);
+    expect(limiter.size()).toBe(3);
 
     expect(limiter.allow("192.0.2.20", 60_001)).toBe(true);
     expect(limiter.size()).toBe(1);
     expect(limiter.allow("192.0.2.20", 60_001)).toBe(true);
     expect(limiter.allow("192.0.2.20", 60_001)).toBe(false);
+  });
+
+  it("denies a cold key at capacity without resetting an active key window", () => {
+    const limiter = createRateLimiter(1, 60_000, 1);
+
+    expect(limiter.allow("victim", 0)).toBe(true);
+    expect(limiter.allow("cold", 1)).toBe(false);
+    expect(limiter.allow("victim", 2)).toBe(false);
+    expect(limiter.allow("cold", 60_000)).toBe(true);
+    expect(limiter.size()).toBe(1);
   });
 });
