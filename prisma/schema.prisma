@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id             String       @id @default(cuid())
+  title          String
+  goal           String
+  status         String       @default("draft")
+  currentVersion Int          @default(0)
+  ownerToken     String       @unique
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  messages       Message[]
+  runs           Run[]
+  versions       AppVersion[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  projectId String
+  role      String
+  kind      String
+  content   String
+  mention   String?
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Run {
+  id         String    @id @default(cuid())
+  projectId  String
+  mode       String
+  status     String
+  planJson   String?
+  errorCode  String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  steps      RunStep[]
+}
+
+model RunStep {
+  id            String  @id @default(cuid())
+  runId         String
+  role          String
+  status        String
+  inputSummary  String
+  artifactType  String?
+  artifactJson  String?
+  run           Run     @relation(fields: [runId], references: [id], onDelete: Cascade)
+}
+
+model AppVersion {
+  id          String   @id @default(cuid())
+  projectId   String
+  version     Int
+  title       String
+  html        String
+  sourceRunId String?
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, version])
+}
