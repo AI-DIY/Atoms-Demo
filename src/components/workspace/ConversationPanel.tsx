@@ -9,6 +9,7 @@ export function ConversationPanel({
   error,
   events,
   loading,
+  running,
   onApprove,
   onRequestPlan,
   projectGoal,
@@ -19,6 +20,7 @@ export function ConversationPanel({
   error: string | null;
   events: TimelineEvent[];
   loading: boolean;
+  running: boolean;
   onApprove: () => void;
   onRequestPlan: (request: string) => void;
   projectGoal: string;
@@ -75,6 +77,7 @@ export function ConversationPanel({
         <AgentTimeline events={events} />
         {awaitingApproval ? (
           <PlanApprovalCard
+            disabled={running}
             onApprove={onApprove}
             roles={["pm", "architect", "engineer"]}
           />
@@ -92,6 +95,7 @@ export function ConversationPanel({
           />
           <button
             className="send-button"
+            disabled={running}
             style={{
               alignItems: "center",
               display: "inline-flex",

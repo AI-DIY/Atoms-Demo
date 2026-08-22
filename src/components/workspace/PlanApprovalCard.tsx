@@ -5,9 +5,11 @@ const roleLabels: Record<string, string> = {
 };
 
 export function PlanApprovalCard({
+  disabled = false,
   roles,
   onApprove,
 }: {
+  disabled?: boolean;
   roles: string[];
   onApprove: () => void;
 }) {
@@ -29,6 +31,7 @@ export function PlanApprovalCard({
       </p>
       <button
         className="action-button"
+        disabled={disabled}
         onClick={onApprove}
         style={{
           background: "var(--lime)",

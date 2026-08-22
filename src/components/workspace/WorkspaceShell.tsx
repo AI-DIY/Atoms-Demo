@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   approveRun,
   createProject,
@@ -47,7 +47,11 @@ function statusForEvent(name: string, payload: Record<string, unknown>): LoadedP
   }
 
   if (name === "step.started") {
-    return payload.role === "leader" ? "planning" : "building";
+    if (payload.role === "leader") {
+      return "planning";
+    }
+
+    return payload.role === "reviewer" ? "reviewing" : "building";
   }
 
   if (name === "run.awaiting_approval") {
@@ -71,13 +75,24 @@ export function WorkspaceShell() {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const activeGenerationRef = useRef(0);
+  const generationRef = useRef(0);
+  const runActiveRef = useRef(false);
 
-  async function refreshProject(activeIdentity: ProjectIdentity) {
+  async function refreshProject(activeIdentity: ProjectIdentity, generation: number) {
     const refreshed = await loadProject(activeIdentity);
-    setProject(refreshed);
+
+    if (generation === activeGenerationRef.current) {
+      setProject(refreshed);
+    }
   }
 
-  function receiveEvent(name: string, data: unknown) {
+  function receiveEvent(generation: number, name: string, data: unknown) {
+    if (generation !== activeGenerationRef.current) {
+      return;
+    }
+
     const payload = eventData(data);
     setEvents((current) => [...current, { name, data: payload }]);
     const nextStatus = statusForEvent(name, payload);
@@ -92,8 +107,10 @@ export function WorkspaceShell() {
 
     if (name === "run.completed" && typeof payload.versionId === "string" && identity) {
       setApprovalRunId(null);
-      void refreshProject(identity).catch(() => {
-        setLoadError("版本已生成，但项目刷新失败，请刷新页面后重试。");
+      void refreshProject(identity, generation).catch(() => {
+        if (generation === activeGenerationRef.current) {
+          setLoadError("版本已生成，但项目刷新失败，请刷新页面后重试。");
+        }
       });
     }
 
@@ -131,10 +148,14 @@ export function WorkspaceShell() {
   }, []);
 
   async function requestPlan(request: string) {
-    if (!identity) {
+    if (!identity || runActiveRef.current) {
       return;
     }
 
+    const generation = ++generationRef.current;
+    activeGenerationRef.current = generation;
+    runActiveRef.current = true;
+    setRunning(true);
     setLoadError(null);
     setEvents([]);
     setApprovalRunId(null);
@@ -144,18 +165,29 @@ export function WorkspaceShell() {
         identity.projectId,
         identity.ownerToken,
         { mode: "team", request },
-        receiveEvent,
+        (name, data) => receiveEvent(generation, name, data),
       );
     } catch {
-      setLoadError("制定团队计划失败，请稍后重试。");
+      if (generation === activeGenerationRef.current) {
+        setLoadError("制定团队计划失败，请稍后重试。");
+      }
+    } finally {
+      if (generation === activeGenerationRef.current) {
+        runActiveRef.current = false;
+        setRunning(false);
+      }
     }
   }
 
   async function approvePlan() {
-    if (!identity || !approvalRunId) {
+    if (!identity || !approvalRunId || runActiveRef.current) {
       return;
     }
 
+    const generation = ++generationRef.current;
+    activeGenerationRef.current = generation;
+    runActiveRef.current = true;
+    setRunning(true);
     setLoadError(null);
 
     try {
@@ -163,10 +195,17 @@ export function WorkspaceShell() {
         identity.projectId,
         identity.ownerToken,
         approvalRunId,
-        receiveEvent,
+        (name, data) => receiveEvent(generation, name, data),
       );
     } catch {
-      setLoadError("开始构建失败，请稍后重试。");
+      if (generation === activeGenerationRef.current) {
+        setLoadError("开始构建失败，请稍后重试。");
+      }
+    } finally {
+      if (generation === activeGenerationRef.current) {
+        runActiveRef.current = false;
+        setRunning(false);
+      }
     }
   }
 
@@ -188,6 +227,7 @@ export function WorkspaceShell() {
           onRequestPlan={requestPlan}
           projectGoal={goal}
           projectTitle={title}
+          running={running}
           status={project?.status ?? "加载中"}
         />
       </section>

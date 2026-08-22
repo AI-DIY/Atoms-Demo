@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultProject } from "@/lib/default-project";
+import type { LoadedProject } from "@/lib/client-api";
 import { projectIdentityStorageKey } from "@/lib/project-session";
 
 const clientApi = vi.hoisted(() => ({
@@ -21,7 +22,7 @@ const createdProject = {
   status: "draft",
 };
 
-const loadedProject = {
+const loadedProject: LoadedProject = {
   id: "project-1",
   ...defaultProject,
   status: "draft",
@@ -29,6 +30,15 @@ const loadedProject = {
   runs: [],
   versions: [],
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
 
 describe("WorkspaceShell", () => {
   beforeEach(() => {
@@ -142,6 +152,149 @@ describe("WorkspaceShell", () => {
       expect(screen.getByText("运行失败")).toBeInTheDocument();
       expect(screen.getByRole("alert")).toHaveTextContent("计划服务不可用");
     });
+  });
+
+  it("在 reviewer 开始验收时更新目标状态", async () => {
+    clientApi.startRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _body: unknown,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("step.started", { role: "reviewer" });
+      },
+    );
+
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "为摄影师创建预约工具" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+
+    expect(await screen.findByText("验收中")).toBeInTheDocument();
+  });
+
+  it("在审批流未结束时只提交一次审批请求", async () => {
+    const approval = deferred<void>();
+    window.localStorage.setItem(
+      projectIdentityStorageKey,
+      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
+    );
+    clientApi.loadProject.mockResolvedValueOnce({
+      ...loadedProject,
+      status: "awaiting_approval",
+      runs: [{ id: "run-1", mode: "team", status: "awaiting_approval" }],
+    });
+    clientApi.approveRun.mockReturnValue(approval.promise);
+
+    render(<WorkspaceShell />);
+
+    const approveButton = await screen.findByRole("button", { name: "开始构建" });
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+
+    await waitFor(() => {
+      expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
+      expect(approveButton).toBeDisabled();
+    });
+
+    approval.resolve();
+  });
+
+  it("在团队计划流未结束时禁用重复提交", async () => {
+    const plan = deferred<void>();
+    clientApi.startRun.mockReturnValue(plan.promise);
+
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "为摄影师创建预约工具" } });
+    const planButton = screen.getByRole("button", { name: "制定团队计划" });
+    fireEvent.click(planButton);
+    fireEvent.click(planButton);
+
+    await waitFor(() => {
+      expect(clientApi.startRun).toHaveBeenCalledTimes(1);
+      expect(planButton).toBeDisabled();
+    });
+
+    plan.resolve();
+  });
+
+  it("忽略旧运行事件和旧完成读取，保留新计划状态", async () => {
+    const staleRefresh = deferred<typeof loadedProject>();
+    let planEvents: ((name: string, data: unknown) => void) | undefined;
+    let approvalEvents: ((name: string, data: unknown) => void) | undefined;
+    clientApi.loadProject
+      .mockResolvedValueOnce(loadedProject)
+      .mockReturnValueOnce(staleRefresh.promise);
+    clientApi.startRun
+      .mockImplementationOnce(
+        async (
+          _projectId: string,
+          _ownerToken: string,
+          _body: unknown,
+          onEvent: (name: string, data: unknown) => void,
+        ) => {
+          planEvents = onEvent;
+          onEvent("run.awaiting_approval", { runId: "run-1" });
+        },
+      )
+      .mockImplementationOnce(
+        async (
+          _projectId: string,
+          _ownerToken: string,
+          _body: unknown,
+          onEvent: (name: string, data: unknown) => void,
+        ) => {
+          onEvent("run.awaiting_approval", { runId: "run-2" });
+        },
+      );
+    clientApi.approveRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _runId: string,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        approvalEvents = onEvent;
+        onEvent("run.completed", { runId: "run-1", versionId: "version-1" });
+      },
+    );
+
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "第一个计划" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
+
+    await waitFor(() => {
+      expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.change(goal, { target: { value: "第二个计划" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    await screen.findByRole("button", { name: "开始构建" });
+
+    planEvents?.("run.failed", { error: "旧运行失败" });
+    approvalEvents?.("run.failed", { error: "旧审批失败" });
+    staleRefresh.resolve({
+      ...loadedProject,
+      status: "ready",
+      currentVersion: 1,
+      versions: [{ id: "version-1", version: 1, title: "旧版本", html: "<h1>旧版本</h1>" }],
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("等待审批")).not.toHaveLength(0);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTitle("Generated application")).not.toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("旧版本"),
+    );
   });
 
   it("starts a team plan, approves it, and refreshes the completed version", async () => {
