@@ -55,6 +55,59 @@ describe("MockProvider", () => {
     expect(html).toContain("删除预约");
   });
 
+  it.each([
+    {
+      goal: "为内容团队创建内容日历",
+      user: "内容运营人员",
+      page: "内容日历（单页）",
+      title: "内容日历",
+      action: "添加内容",
+    },
+    {
+      goal: "为销售团队创建客户线索看板",
+      user: "销售人员",
+      page: "客户线索看板（单页）",
+      title: "客户线索看板",
+      action: "添加线索",
+    },
+  ])(
+    "creates matching PM, architecture, and app artifacts for $title",
+    async ({ goal, user, page, title, action }) => {
+      const provider = new MockProvider();
+      const templateContext = { ...context, goal };
+      const product = await provider.generate("pm", templateContext);
+      const architecture = await provider.generate("architect", templateContext);
+      const app = await provider.generate("engineer", templateContext);
+
+      expect(product.artifact.content).toMatchObject({
+        users: expect.arrayContaining([user]),
+      });
+      expect(architecture.artifact.content).toMatchObject({
+        pages: expect.arrayContaining([page]),
+      });
+      expect(app.artifact.content).toMatchObject({
+        title,
+        html: expect.stringContaining(action),
+      });
+    },
+  );
+
+  it.each([
+    "为摄影师创建预约与报价工具",
+    "为内容团队创建内容日历",
+    "为销售团队创建客户线索看板",
+  ])("keeps the %s demo app self-contained and within 50 KB", async (goal) => {
+    const output = await new MockProvider().generate("engineer", {
+      ...context,
+      goal,
+    });
+    const html = (output.artifact.content as { html: string }).html;
+
+    expect(new TextEncoder().encode(html).byteLength).toBeLessThanOrEqual(50_000);
+    expect(html).not.toMatch(/https?:\/\//iu);
+    expect(html).not.toMatch(/<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)=/iu);
+  });
+
   it("returns each specialist's own artifact type", async () => {
     const provider = new MockProvider();
 

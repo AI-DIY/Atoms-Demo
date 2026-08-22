@@ -1,6 +1,19 @@
 import type { AgentContext, AgentOutput, AgentProvider } from "@/lib/provider";
 import type { RoleId } from "@/lib/domain";
 
+type DemoTemplate = {
+  title: string;
+  productSummary: string;
+  users: string[];
+  scope: string[];
+  flow: string[];
+  acceptance: string[];
+  pages: string[];
+  state: string[];
+  constraints: string[];
+  html: string;
+};
+
 const bookingAppHtml = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -65,13 +78,223 @@ const bookingAppHtml = `<!doctype html>
 </body>
 </html>`;
 
+const contentCalendarAppHtml = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>内容日历</title>
+  <style>
+    :root { color: #1e293b; background: #f8fafc; font-family: system-ui, sans-serif; }
+    body { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { margin: 0 0 8px; } p { color: #475569; }
+    form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 12px; margin: 28px 0; }
+    input, button { box-sizing: border-box; min-height: 40px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+    button { cursor: pointer; background: #4338ca; border-color: #4338ca; color: #fff; font-weight: 650; }
+    #content-items { display: grid; gap: 10px; padding: 0; list-style: none; }
+    .content-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; }
+    .content-item button { min-height: 32px; background: #fff; color: #b91c1c; border-color: #fecaca; }
+    @media (max-width: 680px) { form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>内容日历</h1>
+    <p>统一规划选题、发布日期和发布渠道。</p>
+  </header>
+  <form id="content-form">
+    <input id="topic" aria-label="内容标题" required placeholder="内容标题">
+    <input id="publish-date" aria-label="发布日期" required type="date">
+    <input id="channel" aria-label="发布渠道" required placeholder="发布渠道">
+    <button type="submit">添加内容</button>
+  </form>
+  <main>
+    <h2>发布计划</h2>
+    <ul id="content-items" aria-live="polite"></ul>
+  </main>
+  <script>
+    const form = document.querySelector('#content-form');
+    const list = document.querySelector('#content-items');
+    const topic = document.querySelector('#topic');
+    const publishDate = document.querySelector('#publish-date');
+    const channel = document.querySelector('#channel');
+
+    function addContent(title, date, selectedChannel) {
+      const item = document.createElement('li');
+      item.className = 'content-item';
+      const details = document.createElement('span');
+      details.textContent = title + ' · ' + date + ' · ' + selectedChannel;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '删除内容';
+      remove.addEventListener('click', () => item.remove());
+      item.append(details, remove);
+      list.append(item);
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      addContent(topic.value.trim(), publishDate.value, channel.value.trim());
+      form.reset();
+      topic.focus();
+    });
+  </script>
+</body>
+</html>`;
+
+const leadBoardAppHtml = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>客户线索看板</title>
+  <style>
+    :root { color: #172554; background: #f8fafc; font-family: system-ui, sans-serif; }
+    body { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { margin: 0 0 8px; } p { color: #475569; }
+    form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 12px; margin: 28px 0; }
+    input, select, button { box-sizing: border-box; min-height: 40px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+    button { cursor: pointer; background: #0369a1; border-color: #0369a1; color: #fff; font-weight: 650; }
+    #leads { display: grid; gap: 10px; padding: 0; list-style: none; }
+    .lead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; }
+    .lead button { min-height: 32px; background: #fff; color: #b91c1c; border-color: #fecaca; }
+    @media (max-width: 680px) { form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>客户线索看板</h1>
+    <p>记录潜在客户，清晰跟进每个销售阶段。</p>
+  </header>
+  <form id="lead-form">
+    <input id="company" aria-label="客户名称" required placeholder="客户名称">
+    <input id="contact" aria-label="联系人" required placeholder="联系人">
+    <select id="stage" aria-label="线索阶段">
+      <option>初步沟通</option>
+      <option>需求确认</option>
+      <option>报价跟进</option>
+    </select>
+    <button type="submit">添加线索</button>
+  </form>
+  <main>
+    <h2>线索列表</h2>
+    <ul id="leads" aria-live="polite"></ul>
+  </main>
+  <script>
+    const form = document.querySelector('#lead-form');
+    const list = document.querySelector('#leads');
+    const company = document.querySelector('#company');
+    const contact = document.querySelector('#contact');
+    const stage = document.querySelector('#stage');
+
+    function addLead(name, person, leadStage) {
+      const item = document.createElement('li');
+      item.className = 'lead';
+      const details = document.createElement('span');
+      details.textContent = name + ' · ' + person + ' · ' + leadStage;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '删除线索';
+      remove.addEventListener('click', () => item.remove());
+      item.append(details, remove);
+      list.append(item);
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      addLead(company.value.trim(), contact.value.trim(), stage.value);
+      form.reset();
+      company.focus();
+    });
+  </script>
+</body>
+</html>`;
+
+const bookingTemplate: DemoTemplate = {
+  title: "摄影预约工作台",
+  productSummary: "预约与报价工具",
+  users: ["独立摄影师", "需要预约拍摄的客户"],
+  scope: ["创建预约", "查看预约列表", "删除不再需要的预约"],
+  flow: ["填写客户、日期和服务", "添加预约", "在列表中管理预约"],
+  acceptance: [
+    "用户可以添加包含客户、日期和服务的预约",
+    "用户可以删除任意一条预约",
+    "页面在桌面和移动屏幕可用",
+  ],
+  pages: ["预约工作台（单页）"],
+  state: ["预约列表", "表单中的客户、日期和服务字段"],
+  constraints: [
+    "使用原生 HTML、CSS 和 JavaScript",
+    "不使用外部依赖或网络请求",
+    "生成文档小于 50 KB",
+  ],
+  html: bookingAppHtml,
+};
+
+const contentCalendarTemplate: DemoTemplate = {
+  title: "内容日历",
+  productSummary: "内容日历",
+  users: ["内容运营人员", "内容审核负责人"],
+  scope: ["创建内容计划", "查看发布计划", "删除过期内容"],
+  flow: ["填写标题、发布日期和渠道", "添加内容", "在发布计划中管理内容"],
+  acceptance: [
+    "用户可以添加包含标题、日期和渠道的内容计划",
+    "用户可以删除任意一条内容计划",
+    "页面在桌面和移动屏幕可用",
+  ],
+  pages: ["内容日历（单页）"],
+  state: ["内容计划列表", "标题、发布日期和渠道字段"],
+  constraints: [
+    "使用原生 HTML、CSS 和 JavaScript",
+    "不使用外部依赖或网络请求",
+    "生成文档小于 50 KB",
+  ],
+  html: contentCalendarAppHtml,
+};
+
+const leadBoardTemplate: DemoTemplate = {
+  title: "客户线索看板",
+  productSummary: "客户线索看板",
+  users: ["销售人员", "销售主管"],
+  scope: ["添加客户线索", "查看线索阶段", "删除无效线索"],
+  flow: ["填写客户、联系人和阶段", "添加线索", "在线索列表中跟进"],
+  acceptance: [
+    "用户可以添加包含客户、联系人和阶段的线索",
+    "用户可以删除任意一条线索",
+    "页面在桌面和移动屏幕可用",
+  ],
+  pages: ["客户线索看板（单页）"],
+  state: ["客户线索列表", "客户、联系人和线索阶段字段"],
+  constraints: [
+    "使用原生 HTML、CSS 和 JavaScript",
+    "不使用外部依赖或网络请求",
+    "生成文档小于 50 KB",
+  ],
+  html: leadBoardAppHtml,
+};
+
 function projectName(context: AgentContext) {
   return context.goal.trim() || "你的产品";
+}
+
+function chooseDemoTemplate(goal: string): DemoTemplate {
+  const normalizedGoal = goal.toLowerCase();
+
+  if (/内容|日历|选题|发布计划|content|calendar/u.test(normalizedGoal)) {
+    return contentCalendarTemplate;
+  }
+
+  if (/线索|销售|客户看板|lead|crm|pipeline/u.test(normalizedGoal)) {
+    return leadBoardTemplate;
+  }
+
+  return bookingTemplate;
 }
 
 export class MockProvider implements AgentProvider {
   async generate(role: RoleId, context: AgentContext): Promise<AgentOutput> {
     const goal = projectName(context);
+    const template = chooseDemoTemplate(goal);
 
     switch (role) {
       case "leader":
@@ -92,47 +315,39 @@ export class MockProvider implements AgentProvider {
         };
       case "pm":
         return {
-          summary: `已为“${goal}”整理产品需求与验收条件。`,
+          summary: `已为“${goal}”整理${template.productSummary}的需求与验收条件。`,
           artifact: {
             type: "prd",
             content: {
-              users: ["独立摄影师", "需要预约拍摄的客户"],
-              scope: ["创建预约", "查看预约列表", "删除不再需要的预约"],
-              flow: ["填写客户、日期和服务", "添加预约", "在列表中管理预约"],
-              acceptance: [
-                "用户可以添加包含客户、日期和服务的预约",
-                "用户可以删除任意一条预约",
-                "页面在桌面和移动屏幕可用",
-              ],
+              users: template.users,
+              scope: template.scope,
+              flow: template.flow,
+              acceptance: template.acceptance,
             },
           },
           suggestedNextAction: "由架构师定义页面和状态边界",
         };
       case "architect":
         return {
-          summary: "已确定单文件预约工具的页面结构和浏览器状态。",
+          summary: `已确定${template.productSummary}的页面结构和浏览器状态。`,
           artifact: {
             type: "architecture",
             content: {
-              pages: ["预约工作台（单页）"],
-              state: ["预约列表", "表单中的客户、日期和服务字段"],
-              constraints: [
-                "使用原生 HTML、CSS 和 JavaScript",
-                "不使用外部依赖或网络请求",
-                "生成文档小于 50 KB",
-              ],
+              pages: template.pages,
+              state: template.state,
+              constraints: template.constraints,
             },
           },
           suggestedNextAction: "由工程师生成可交互的单文件网页",
         };
       case "engineer":
         return {
-          summary: "已生成可添加和删除预约的独立网页应用。",
+          summary: `已生成可管理${template.productSummary}的独立网页应用。`,
           artifact: {
             type: "app",
             content: {
-              title: "摄影预约工作台",
-              html: bookingAppHtml,
+              title: template.title,
+              html: template.html,
             },
           },
           suggestedNextAction: "在预览中测试添加和删除预约",
