@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createProjectInput, POST } from "@/app/api/projects/route";
+import { POST } from "@/app/api/projects/route";
 import { GET } from "@/app/api/projects/[projectId]/route";
+import { createProjectInput } from "@/lib/project-input";
 import { prisma } from "@/server/prisma";
 
 const projectInput = {
@@ -98,5 +99,36 @@ describe("projects API", () => {
     expect(response.status).toBe(404);
     expect(responseBody).not.toHaveProperty("ownerToken");
     expect(responseBody).not.toHaveProperty("goal");
+  });
+
+  it("returns 404 for an unknown project id", async () => {
+    const response = await GET(
+      new Request("http://localhost/api/projects/missing-project", {
+        headers: { "x-project-token": "any-owner-token" },
+      }),
+      { params: Promise.resolve({ projectId: "missing-project" }) },
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Project not found" });
+  });
+
+  it("returns 404 when the owner token header is missing", async () => {
+    const createdResponse = await POST(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(projectInput),
+      }),
+    );
+    const created = (await createdResponse.json()) as { id: string };
+
+    const response = await GET(
+      new Request(`http://localhost/api/projects/${created.id}`),
+      { params: Promise.resolve({ projectId: created.id }) },
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Project not found" });
   });
 });

@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { createProjectInput } from "@/lib/project-input";
 import { createProject } from "@/lib/repository";
-
-export const createProjectInput = z.object({
-  title: z.string().trim().min(1).max(80),
-  goal: z.string().trim().min(8).max(2000),
-});
 
 export async function POST(request: Request) {
   let body: unknown;
