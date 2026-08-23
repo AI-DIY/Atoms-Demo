@@ -4,7 +4,7 @@ import { useState } from "react";
 import { completeOnboarding, type CurrentUser, type ModelConfigView } from "@/lib/client-api";
 import { ModelConfigForm } from "./ModelConfigForm";
 
-export function OnboardingWizard({ user, onComplete }: { user: CurrentUser; onComplete: () => void }) {
+export function OnboardingWizard({ user, onComplete }: { user: CurrentUser; onComplete: (user: CurrentUser) => void }) {
   const [step, setStep] = useState<1 | 2 | 3>(2);
   const [created, setCreated] = useState(false);
   const [error, setError] = useState<string | null>(null);
