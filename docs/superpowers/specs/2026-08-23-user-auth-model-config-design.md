@@ -19,7 +19,7 @@
 - `ModelConfig`：每个用户一条配置；保存端点、加密 API Key、模型 ID、显示名称、备注、最大输出 Token、推理强度。
 - `Project.userId`：项目归属用户。保留现有 owner token 字段用于兼容已有数据和测试，但新页面以会话校验为主。
 
-API Key 使用 AES-256-GCM 加密后写入数据库，密钥来自服务端 `MODEL_CONFIG_ENCRYPTION_KEY`，不进入浏览器响应。密码使用 Node `crypto.scrypt` 哈希并带随机盐。登录态使用 HttpOnly、SameSite=Lax Cookie；生产环境设置 Secure。
+API Key 使用 AES-256-GCM 加密后写入数据库，服务端首次保存配置时自动生成并持久化本地应用密钥，不需要通过环境变量配置，也不进入浏览器响应。密码使用 Node `crypto.scrypt` 哈希并带随机盐。登录态使用 HttpOnly、SameSite=Lax Cookie；生产环境设置 Secure。
 
 ## API 与服务边界
 

@@ -57,6 +57,25 @@ export type Fetcher = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export type CurrentUser = {
+  authenticated: boolean;
+  email?: string;
+  onboardingCompleted?: boolean;
+  hasModelConfig?: boolean;
+};
+
+export type ModelConfigInput = {
+  baseUrl: string;
+  apiKey: string;
+  modelId: string;
+  displayName: string;
+  notes?: string;
+  maxOutputTokens?: number;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
+};
+
+export type ModelConfigView = Omit<ModelConfigInput, "apiKey"> & { apiKeyMasked: string };
+
 export type RunEventHandler = (name: string, data: unknown) => void;
 
 export class ApiError extends Error {
@@ -67,6 +86,76 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
   }
+}
+
+export async function getCurrentUser(fetcher: Fetcher = fetch): Promise<CurrentUser> {
+  const response = await fetcher("/api/auth/me");
+  return readJson<CurrentUser>(response);
+}
+
+export async function registerUser(
+  email: string,
+  password: string,
+  fetcher: Fetcher = fetch,
+): Promise<CurrentUser> {
+  const response = await fetcher("/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  return readJson<CurrentUser>(response);
+}
+
+export async function loginUser(
+  email: string,
+  password: string,
+  fetcher: Fetcher = fetch,
+): Promise<CurrentUser> {
+  const response = await fetcher("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  return readJson<CurrentUser>(response);
+}
+
+export async function logoutUser(fetcher: Fetcher = fetch): Promise<void> {
+  const response = await fetcher("/api/auth/logout", { method: "POST" });
+  await readJson<{ authenticated: false }>(response);
+}
+
+export async function completeOnboarding(fetcher: Fetcher = fetch): Promise<CurrentUser> {
+  const response = await fetcher("/api/auth/me", { method: "PATCH" });
+  return readJson<CurrentUser>(response);
+}
+
+export async function loadModelConfig(fetcher: Fetcher = fetch): Promise<ModelConfigView | null> {
+  const response = await fetcher("/api/model-config");
+  return readJson<ModelConfigView | null>(response);
+}
+
+export async function saveModelConfig(
+  input: ModelConfigInput,
+  fetcher: Fetcher = fetch,
+): Promise<ModelConfigView> {
+  const response = await fetcher("/api/model-config", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return readJson<ModelConfigView>(response);
+}
+
+export async function testModelConfig(
+  input: ModelConfigInput,
+  fetcher: Fetcher = fetch,
+): Promise<{ ok: true }> {
+  const response = await fetcher("/api/model-config/test", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return readJson<{ ok: true }>(response);
 }
 
 function errorMessageFromResponseBody(detail: string): string {

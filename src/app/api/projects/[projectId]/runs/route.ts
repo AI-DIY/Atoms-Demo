@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getCurrentUser } from "@/lib/auth-session";
 import type { AppArtifact, ParsedArtifact } from "@/lib/artifacts";
 import {
   allowModelStart,
@@ -23,7 +24,10 @@ import {
   getProject,
   updateProjectStatus,
   updateRun,
+  getProjectForUser,
 } from "@/lib/repository";
+import { getModelConfig, } from "@/lib/user-repository";
+import { modelConfigForProvider } from "@/lib/model-config";
 import { readBoundedJsonBody } from "@/lib/request-body";
 import { maxRunRequestBytes } from "@/lib/run-input";
 import { streamRunEvents, type RunEventEmitter } from "@/lib/run-events";
@@ -95,10 +99,6 @@ function persistentCallbacks(
 export async function POST(request: Request, { params }: RouteContext) {
   const ownerToken = request.headers.get("x-project-token");
 
-  if (!ownerToken) {
-    return notFoundResponse();
-  }
-
   const requestBody = await readBoundedJsonBody(request, maxRunRequestBytes);
 
   if (requestBody.kind === "tooLarge") {
@@ -116,9 +116,19 @@ export async function POST(request: Request, { params }: RouteContext) {
   const { projectId } = await params;
 
   let project;
+  let effectiveOwnerToken = ownerToken;
+  const user = await getCurrentUser(request);
 
   try {
-    project = await getProject(projectId, ownerToken);
+    if (user) {
+      const owned = await getProjectForUser(projectId, user.id);
+      project = owned;
+      effectiveOwnerToken = owned.ownerToken;
+    } else if (ownerToken) {
+      project = await getProject(projectId, ownerToken);
+    } else {
+      return notFoundResponse();
+    }
   } catch (error) {
     if (errorMessage(error) === "Project not found") {
       return notFoundResponse();
@@ -159,7 +169,11 @@ export async function POST(request: Request, { params }: RouteContext) {
   let provider;
 
   try {
-    provider = getAgentProvider();
+    const config = user ? await getModelConfig(user.id) : null;
+    if (user && !config) {
+      return NextResponse.json({ error: "请先完成模型配置" }, { status: 503 });
+    }
+    provider = getAgentProvider(process.env, undefined, config ? await modelConfigForProvider(config) : undefined);
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
   }
@@ -182,7 +196,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   try {
     run = await createRunWithMessage(
       projectId,
-      ownerToken,
+      effectiveOwnerToken!,
       {
         mode: input.data.mode,
         status: input.data.mode === "team" ? "planning" : "running",
@@ -210,12 +224,12 @@ export async function POST(request: Request, { params }: RouteContext) {
             mentionedRole!,
             project.goal,
             input.data.request,
-            persistentCallbacks(projectId, ownerToken, run.id, emit),
+            persistentCallbacks(projectId, effectiveOwnerToken!, run.id, emit),
           );
-          await completeRun(projectId, ownerToken, run.id, { status: "completed" });
+          await completeRun(projectId, effectiveOwnerToken!, run.id, { status: "completed" });
           emit("run.completed", { runId: run.id });
         } catch {
-          await completeRun(projectId, ownerToken, run.id, {
+          await completeRun(projectId, effectiveOwnerToken!, run.id, {
             status: "failed",
             errorCode: "mention_failed",
           });
@@ -227,30 +241,30 @@ export async function POST(request: Request, { params }: RouteContext) {
 
       if (input.data.mode === "iterate") {
         try {
-          await updateProjectStatus(projectId, ownerToken, "iterating");
+          await updateProjectStatus(projectId, effectiveOwnerToken!, "iterating");
           const step = await runIteration(
             provider,
             project.goal,
             input.data.request,
             currentApp!,
-            persistentCallbacks(projectId, ownerToken, run.id, emit),
+            persistentCallbacks(projectId, effectiveOwnerToken!, run.id, emit),
           );
           const app = step.artifact as AppArtifact;
-          const version = await createVersion(projectId, ownerToken, {
+          const version = await createVersion(projectId, effectiveOwnerToken!, {
             title: app.content.title,
             html: app.content.html,
             sourceRunId: run.id,
           });
 
-          await completeRun(projectId, ownerToken, run.id, { status: "completed" });
-          await updateProjectStatus(projectId, ownerToken, "ready");
+          await completeRun(projectId, effectiveOwnerToken!, run.id, { status: "completed" });
+          await updateProjectStatus(projectId, effectiveOwnerToken!, "ready");
           emit("run.completed", { runId: run.id, versionId: version.id });
         } catch {
-          await completeRun(projectId, ownerToken, run.id, {
+          await completeRun(projectId, effectiveOwnerToken!, run.id, {
             status: "failed",
             errorCode: "iteration_failed",
           });
-          await updateProjectStatus(projectId, ownerToken, "failed");
+          await updateProjectStatus(projectId, effectiveOwnerToken!, "failed");
           emit("run.failed", { runId: run.id, error: "运行失败" });
         }
 
@@ -261,21 +275,21 @@ export async function POST(request: Request, { params }: RouteContext) {
         const plan = await createTeamPlan(
           provider,
           input.data.request,
-          persistentCallbacks(projectId, ownerToken, run.id, emit),
+            persistentCallbacks(projectId, effectiveOwnerToken!, run.id, emit),
         );
 
-        await updateRun(projectId, ownerToken, run.id, {
+        await updateRun(projectId, effectiveOwnerToken!, run.id, {
           status: "awaiting_approval",
           planJson: JSON.stringify({ goal: plan.goal, artifact: plan.artifact }),
         });
-        await updateProjectStatus(projectId, ownerToken, "awaiting_approval");
+        await updateProjectStatus(projectId, effectiveOwnerToken!, "awaiting_approval");
         emit("run.awaiting_approval", { runId: run.id });
       } catch (error) {
-        await completeRun(projectId, ownerToken, run.id, {
+        await completeRun(projectId, effectiveOwnerToken!, run.id, {
           status: "failed",
           errorCode: "plan_failed",
         });
-        await updateProjectStatus(projectId, ownerToken, "failed");
+        await updateProjectStatus(projectId, effectiveOwnerToken!, "failed");
         emit("run.failed", { runId: run.id, error: errorMessage(error) });
       }
     } finally {

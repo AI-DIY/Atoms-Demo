@@ -66,6 +66,8 @@ const projectSelect = {
   ...projectIncludes,
 };
 
+const projectAuthSelect = { ...projectSelect, ownerToken: true };
+
 const versionLocks = new Map<string, Promise<void>>();
 
 async function withProjectVersionLock<T>(
@@ -121,14 +123,24 @@ async function requireOwnedRun(
   return run;
 }
 
-export async function createProject(input: ProjectInput) {
+export async function createProject(input: ProjectInput, userId?: string) {
   return prisma.project.create({
     data: {
+      userId,
       title: input.title,
       goal: input.goal,
       ownerToken: randomUUID(),
     },
   });
+}
+
+export async function getProjectForUser(id: string, userId: string) {
+  const project = await prisma.project.findFirst({
+    where: { id, userId },
+    select: projectAuthSelect,
+  });
+  if (!project) throw new Error("Project not found");
+  return project;
 }
 
 export async function getProject(id: string, ownerToken: string) {

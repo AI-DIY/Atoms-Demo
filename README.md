@@ -9,14 +9,14 @@ Agent Studio 将一句产品目标转化为可审阅、可运行的单页应用�
 - Mock Provider 可以无 API Key 演示；真实模式通过兼容 OpenAI Responses API 的服务生成内容。
 - 面向单台 2 vCPU / 2 GB RAM 主机。SQLite、进程内并发控制和进程内限流不适合多节点部署。
 
-本项目不提供生产级账户体系、多人实时协作、云端对象存储、横向扩缩容或生成应用的数据持久化。生成的预约数据只保存在 iframe 当前浏览器会话中；项目元数据、消息和版本保存在 SQLite。
+本项目提供邮箱账户、HttpOnly 会话和按用户隔离的模型配置；不提供邮箱验证、密码找回、多人实时协作、云端对象存储或横向扩缩容。生成的预约数据只保存在 iframe 当前浏览器会话中；用户、模型配置、项目元数据、消息和版本保存在 SQLite。
 
 ## 架构
 
 - Next.js App Router 同时提供工作区 UI 与 API；Prisma 使用 SQLite 保存项目、运行、消息和版本。
 - 长任务 API 使用 SSE 发送步骤和完成事件，Nginx 必须关闭响应缓冲。
 - 生成的 HTML 先做安全清理，再以 `srcDoc` 加载在 `sandbox="allow-scripts allow-forms"` iframe 中。它可以运行本地脚本和提交本地表单，但不能取得同源权限或导航顶层页面。
-- `MOCK_LLM=true` 时使用确定性的 Mock Provider；否则必须同时提供 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL`，缺失配置会返回错误，生产环境不会静默回退到 Mock。
+- `MOCK_LLM=true` 时使用确定性的 Mock Provider；真实模式必须先登录并在设置页面保存模型配置，服务端不会读取 OpenAI 环境变量作为回退。
 
 ## 本地 Mock 演示
 
@@ -31,7 +31,7 @@ pnpm db:migrate
 pnpm dev
 ```
 
-打开 `http://localhost:3000`。`.env.example` 默认包含 `MOCK_LLM="true"`，因此本地演示不需要 API Key。
+打开 `http://localhost:3000`。首次进入先注册邮箱账户，再在三步初始化向导中填写 Base URL、API Key、模型 ID、显示名称、备注、最大输出 Token 和推理强度。`.env.example` 默认包含 `MOCK_LLM="true"`，但已登录用户仍需完成模型配置；未登录的旧 owner-token API 测试仍可使用 Mock Provider。
 
 ## 环境变量
 
@@ -39,15 +39,12 @@ pnpm dev
 | --- | --- | --- | --- |
 | `DATABASE_URL` | 全部 | `file:./dev.db` | Prisma SQLite URL。生产环境使用 `file:/var/lib/agent-studio/agent-studio.db`。 |
 | `MOCK_LLM` | 全部 | `true` 或 `false` | 仅精确值 `true` 启用无 Key Mock。生产应设为 `false`。 |
-| `OPENAI_BASE_URL` | `MOCK_LLM=false` | `https://api.openai.com/v1` | OpenAI 或兼容 Responses 服务的 API 基地址。 |
-| `OPENAI_API_KEY` | `MOCK_LLM=false` | `sk-...` | 服务端密钥，只放在受限环境文件。 |
-| `OPENAI_MODEL` | `MOCK_LLM=false` | `gpt-5.5` | 用于生成的模型名称。 |
 | `NODE_ENV` | 生产 | `production` | systemd 服务已设置。 |
 | `HOSTNAME` | 生产 | `127.0.0.1` | Next standalone 仅监听 loopback，公网入口只能是 Nginx。 |
 | `PORT` | 生产 | `3000` | Next standalone 监听端口。 |
 | `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` | 可选 E2E | `/usr/bin/chromium` | 缺少 Playwright 下载浏览器时，提供 Chromium 可执行文件路径；正常 CI 不需要设置。 |
 
-不要创建或使用 `NEXT_PUBLIC_OPENAI_API_KEY`、`NEXT_PUBLIC_OPENAI_BASE_URL` 等变量。任何 `NEXT_PUBLIC_*` 值都会进入浏览器构建产物，不能存放密钥或服务端模型配置。
+不要创建或使用 `OPENAI_*` 或 `NEXT_PUBLIC_OPENAI_*` 变量。模型 Base URL、API Key 和模型信息全部在登录后的设置页面填写；API Key 使用服务端自动生成并持久化的本地密钥加密保存。
 
 ## 数据库备份与恢复
 
@@ -91,14 +88,11 @@ sudo install -m 640 -o root -g agentstudio /dev/null /etc/agent-studio.env
 sudoedit /etc/agent-studio.env
 ```
 
-文件内容示例，生产必须关闭 Mock 并填写真实服务端凭据：
+文件内容示例，生产必须关闭 Mock；真实模型信息在登录后的设置页面填写：
 
 ```dotenv
 DATABASE_URL="file:/var/lib/agent-studio/agent-studio.db"
 MOCK_LLM="false"
-OPENAI_BASE_URL="https://api.openai.com/v1"
-OPENAI_API_KEY="replace-with-your-server-side-key"
-OPENAI_MODEL="gpt-5.5"
 ```
 
 构建、迁移，并将 standalone 所需静态资源复制到产物目录。即使当前仓库没有静态资源，也保留 `public` 复制步骤，后续新增资源不会在生产环境丢失：

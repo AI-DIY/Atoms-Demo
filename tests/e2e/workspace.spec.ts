@@ -3,6 +3,16 @@ import { expect, test } from "@playwright/test";
 test("builds a booking app through approval and preserves a specialist response", async ({ page }) => {
   await page.goto("/");
 
+  await page.getByRole("button", { name: "还没有账户？注册" }).click();
+  await page.getByRole("textbox", { name: "邮箱" }).fill("e2e@example.com");
+  await page.getByRole("textbox", { name: "密码" }).fill("correct horse battery staple");
+  await page.getByRole("button", { name: "注册" }).click();
+  await page.getByRole("textbox", { name: "API Key" }).fill("sk-e2e-test-key");
+  await page.getByRole("button", { name: "测试连接" }).click();
+  await expect(page.getByText("连接测试成功，可以保存。" )).toBeVisible();
+  await page.getByRole("button", { name: "保存配置" }).click();
+  await page.getByRole("button", { name: "进入工作区" }).click();
+
   await expect(page.getByRole("heading", { name: "从目标到可运行应用" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "摄影预约助手" })).toBeVisible();
 

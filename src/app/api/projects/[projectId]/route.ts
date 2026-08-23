@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getProject } from "@/lib/repository";
+import { getCurrentUser } from "@/lib/auth-session";
+import { getProject, getProjectForUser } from "@/lib/repository";
 
 type RouteContext = {
   params: Promise<{ projectId: string }>;
@@ -12,14 +13,16 @@ function notFoundResponse() {
 export async function GET(request: Request, { params }: RouteContext) {
   const ownerToken = request.headers.get("x-project-token");
 
-  if (!ownerToken) {
-    return notFoundResponse();
-  }
-
   const { projectId } = await params;
 
   try {
-    const project = await getProject(projectId, ownerToken);
+    const user = await getCurrentUser(request);
+    const project = user
+      ? await getProjectForUser(projectId, user.id)
+      : ownerToken
+        ? await getProject(projectId, ownerToken)
+        : null;
+    if (!project) return notFoundResponse();
     const { ownerToken: _ownerToken, ...publicProject } = project as typeof project & {
       ownerToken?: string;
     };

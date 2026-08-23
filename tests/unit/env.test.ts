@@ -14,20 +14,16 @@ describe("getAgentProvider", () => {
     );
   });
 
-  it("creates the real provider only when all server-side model settings are present", () => {
+  it("does not read OpenAI model settings from the environment", () => {
     const provider = {} as AgentProvider;
     const createProvider = vi.fn().mockReturnValue(provider);
 
-    expect(getAgentProvider({
+    expect(() => getAgentProvider({
       MOCK_LLM: "false",
       OPENAI_BASE_URL: "https://models.example/v1",
       OPENAI_API_KEY: "server-only-secret",
       OPENAI_MODEL: "gpt-5.5",
-    }, createProvider)).toBe(provider);
-    expect(createProvider).toHaveBeenCalledWith({
-      baseUrl: "https://models.example/v1",
-      apiKey: "server-only-secret",
-      model: "gpt-5.5",
-    });
+    }, createProvider)).toThrow("Model configuration is incomplete");
+    expect(createProvider).not.toHaveBeenCalled();
   });
 });

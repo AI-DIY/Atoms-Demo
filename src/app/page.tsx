@@ -1,6 +1,5 @@
-import { WorkspaceShell } from "@/components/workspace/WorkspaceShell";
+import { AppShell } from "@/components/auth/AppShell";
 
 export default function HomePage() {
-  return <WorkspaceShell />;
+  return <AppShell />;
 }
-

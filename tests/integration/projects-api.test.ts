@@ -3,6 +3,7 @@ import { POST } from "@/app/api/projects/route";
 import { GET } from "@/app/api/projects/[projectId]/route";
 import { createProjectInput, maxProjectRequestBytes } from "@/lib/project-input";
 import { prisma } from "@/server/prisma";
+import { POST as register } from "@/app/api/auth/register/route";
 
 const projectInput = {
   title: "  摄影预约助手  ",
@@ -193,5 +194,32 @@ describe("projects API", () => {
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: "Project not found" });
+  });
+
+  it("binds authenticated projects to the current user", async () => {
+    const registered = await register(new Request("http://localhost/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "owner@example.com", password: "correct horse battery staple" }),
+    }));
+    const cookie = registered.headers.get("set-cookie")!.split(";")[0];
+    const createdResponse = await POST(new Request("http://localhost/api/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify(projectInput),
+    }));
+    const created = await createdResponse.json() as { id: string; ownerToken: string };
+
+    const otherUser = await register(new Request("http://localhost/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "other@example.com", password: "correct horse battery staple" }),
+    }));
+    const otherCookie = otherUser.headers.get("set-cookie")!.split(";")[0];
+    const response = await GET(new Request(`http://localhost/api/projects/${created.id}`, {
+      headers: { cookie: otherCookie },
+    }), { params: Promise.resolve({ projectId: created.id }) });
+
+    expect(response.status).toBe(404);
   });
 });

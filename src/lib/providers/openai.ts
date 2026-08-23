@@ -17,6 +17,8 @@ export type ResponsesRequest = {
   model: string;
   instructions: string;
   input: string;
+  max_output_tokens?: number;
+  reasoning?: { effort: "none" | "low" | "medium" | "high" };
   text?: { format: JsonSchemaFormat };
 };
 
@@ -26,10 +28,15 @@ export type ResponsesClient = {
   };
 };
 
-type OpenAIProviderConfig = {
+export type OpenAIProviderConfig = {
   baseUrl: string;
   apiKey: string;
   model: string;
+  modelId?: string;
+  displayName?: string;
+  notes?: string;
+  maxOutputTokens?: number;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
 };
 
 type OpenAIProviderDependencies = {
@@ -244,6 +251,13 @@ function repairInstruction(role: RoleId): string {
   return `${strictJsonInstruction(role)}\n上一响应未通过 JSON 或产物校验。只输出完整 JSON，不要省略任何字段。`;
 }
 
+function optionalRequestConfig(config: OpenAIProviderConfig): Pick<ResponsesRequest, "max_output_tokens" | "reasoning"> {
+  return {
+    ...(config.maxOutputTokens ? { max_output_tokens: config.maxOutputTokens } : {}),
+    ...(config.reasoningEffort ? { reasoning: { effort: config.reasoningEffort } } : {}),
+  };
+}
+
 export function createOpenAIProvider(
   config: OpenAIProviderConfig,
   dependencies: OpenAIProviderDependencies = {},
@@ -267,6 +281,7 @@ export function createOpenAIProvider(
           model: config.model,
           instructions: strictJsonInstruction(role),
           input,
+          ...optionalRequestConfig(config),
           ...structuredOutput(role),
         });
       } catch (error) {
@@ -281,6 +296,7 @@ export function createOpenAIProvider(
             model: config.model,
             instructions: fallbackJsonInstruction(role),
             input,
+            ...optionalRequestConfig(config),
           });
         } catch (fallbackError) {
           throw safeError(fallbackError, config.apiKey);
@@ -297,6 +313,7 @@ export function createOpenAIProvider(
             model: config.model,
             instructions: repairInstruction(role),
             input: repairInput(role, context, response.output_text),
+            ...optionalRequestConfig(config),
             ...(structured ? structuredOutput(role) : {}),
           });
         } catch (repairError) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { restoreVersion } from "@/lib/repository";
+import { getCurrentUser } from "@/lib/auth-session";
+import { getProjectForUser, restoreVersion } from "@/lib/repository";
 
 type RouteContext = {
   params: Promise<{ projectId: string; versionId: string }>;
@@ -12,14 +13,15 @@ function notFoundResponse(error: "Project not found" | "Version not found") {
 export async function POST(request: Request, { params }: RouteContext) {
   const ownerToken = request.headers.get("x-project-token");
 
-  if (!ownerToken) {
-    return notFoundResponse("Project not found");
-  }
-
   const { projectId, versionId } = await params;
 
   try {
-    const restored = await restoreVersion(projectId, ownerToken, versionId);
+    const user = await getCurrentUser(request);
+    const effectiveOwnerToken = user
+      ? (await getProjectForUser(projectId, user.id)).ownerToken
+      : ownerToken;
+    if (!effectiveOwnerToken) return notFoundResponse("Project not found");
+    const restored = await restoreVersion(projectId, effectiveOwnerToken, versionId);
 
     return NextResponse.json(restored);
   } catch (error) {

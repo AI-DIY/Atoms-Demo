@@ -70,6 +70,30 @@ describe("createOpenAIProvider", () => {
     });
   });
 
+  it("passes optional output and reasoning settings to Responses", async () => {
+    const client = clientReturning(JSON.stringify({
+      summary: "已完成研究。",
+      artifact: {
+        type: "research",
+        content: { findings: ["需求清晰"], assumptions: ["用户使用移动端"] },
+      },
+    }));
+    const provider = createOpenAIProvider({
+      baseUrl: "https://models.example/v1",
+      apiKey: "secret",
+      model: "gpt-5.5",
+      maxOutputTokens: 1200,
+      reasoningEffort: "medium",
+    }, { client });
+
+    await provider.generate("research", context);
+
+    expect(client.responses.create).toHaveBeenCalledWith(expect.objectContaining({
+      max_output_tokens: 1200,
+      reasoning: { effort: "medium" },
+    }));
+  });
+
   it("uses strict schemas for the leader plan and engineer app artifacts", async () => {
     const client: ResponsesClient = {
       responses: {

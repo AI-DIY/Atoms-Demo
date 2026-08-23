@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth-session";
 import { allowProjectCreation } from "@/lib/execution-limits";
 import { createProjectInput, maxProjectRequestBytes } from "@/lib/project-input";
 import { readBoundedJsonBody } from "@/lib/request-body";
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请求过于频繁，请稍后重试。" }, { status: 429 });
   }
 
-  const project = await createProject(parsed.data);
+  const project = await createProject(parsed.data, (await getCurrentUser(request))?.id);
 
   return NextResponse.json(
     {
