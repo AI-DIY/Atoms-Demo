@@ -8,6 +8,7 @@ import {
   decryptPersistedSecret,
   encryptPersistedSecret,
   getOrCreatePersistedSecret,
+  getPersistedSecretPath,
 } from "@/lib/crypto";
 
 describe("secret encryption", () => {
@@ -26,6 +27,14 @@ describe("secret encryption", () => {
     const encrypted = await encryptPersistedSecret("sk-persisted-key");
 
     await expect(decryptPersistedSecret(encrypted)).resolves.toBe("sk-persisted-key");
+  });
+
+  it("uses the service state directory for the Linux production key", () => {
+    expect(getPersistedSecretPath({
+      nodeEnv: "production",
+      platform: "linux",
+      cwd: "/opt/agent-studio/.next/standalone",
+    })).toBe("/var/lib/agent-studio/.model-config-secret");
   });
 
   it("creates a persisted secret at a requested path", () => {

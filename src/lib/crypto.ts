@@ -13,9 +13,21 @@ function keyFromSecret(secret: string | undefined): Buffer {
   return createHash("sha256").update(secret).digest();
 }
 
-const persistedSecretPath = process.env.NODE_ENV === "production" && process.platform === "linux"
-  ? "/var/lib/agent-studio/.model-config-secret"
-  : path.join(process.cwd(), "prisma", ".model-config-secret");
+export function getPersistedSecretPath({
+  nodeEnv = process.env.NODE_ENV,
+  platform = process.platform,
+  cwd = process.cwd(),
+}: {
+  nodeEnv?: string;
+  platform?: NodeJS.Platform;
+  cwd?: string;
+} = {}): string {
+  return nodeEnv === "production" && platform === "linux"
+    ? "/var/lib/agent-studio/.model-config-secret"
+    : path.join(cwd, "prisma", ".model-config-secret");
+}
+
+const persistedSecretPath = getPersistedSecretPath();
 
 function resolvedSecretPath(secretPath: string): string {
   try {
