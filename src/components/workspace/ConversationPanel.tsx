@@ -148,7 +148,7 @@ export function ConversationPanel({
             ))}
           </ol>
         ) : null}
-        <AgentTimeline events={timelineEvents} />
+        <AgentTimeline events={timelineEvents} running={running} status={status} />
         {awaitingApproval ? (
           <PlanApprovalCard
             disabled={running}

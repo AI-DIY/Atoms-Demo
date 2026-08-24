@@ -21,6 +21,46 @@ export type TimelineEvent = {
   data: Record<string, unknown>;
 };
 
+type StageState = "pending" | "active" | "completed" | "failed";
+
+const buildStages = ["规划", "审批", "构建", "验收"] as const;
+
+function activeStageIndex(status: string, events: TimelineEvent[]) {
+  if (status === "failed") {
+    const lastStartedStep = [...events].reverse().find((event) => event.name === "step.started");
+    const role = lastStartedStep?.data.role;
+
+    if (role === "reviewer") return 3;
+    if (role === "leader") return 0;
+    return 2;
+  }
+
+  if (status === "awaiting_approval") return 1;
+  if (status === "building" || status === "iterating") return 2;
+  if (status === "reviewing") return 3;
+  if (status === "ready") return buildStages.length;
+  return 0;
+}
+
+function stageState(index: number, activeIndex: number, status: string): StageState {
+  if (status === "ready" || index < activeIndex) return "completed";
+  if (index === activeIndex) return status === "failed" ? "failed" : "active";
+  return "pending";
+}
+
+function stageLabel(state: StageState) {
+  return {
+    pending: "未开始",
+    active: "进行中",
+    completed: "已完成",
+    failed: "失败",
+  }[state];
+}
+
+function shouldShowProgress(status: string, running: boolean) {
+  return running || ["planning", "awaiting_approval", "building", "reviewing", "ready", "failed", "iterating"].includes(status);
+}
+
 function displayName(event: TimelineEvent) {
   const role = event.data.role;
 
@@ -35,54 +75,54 @@ function eventSummary(event: TimelineEvent) {
   return typeof event.data.summary === "string" ? event.data.summary : null;
 }
 
-export function AgentTimeline({ events }: { events: TimelineEvent[] }) {
+export function AgentTimeline({
+  events,
+  running = false,
+  status = "draft",
+}: {
+  events: TimelineEvent[];
+  running?: boolean;
+  status?: string;
+}) {
+  const activeIndex = activeStageIndex(status, events);
+
   return (
-    <section aria-label="智能体运行时间线" className="agent-timeline" style={{ minHeight: 178 }}>
+    <section aria-label="智能体运行时间线" className="agent-timeline">
       <p className="feed-heading">团队运行记录</p>
+      {shouldShowProgress(status, running) ? (
+        <section aria-label="构建进度" className="build-progress">
+          <p className="build-progress-title" role="status">当前阶段：{buildStages[Math.min(activeIndex, buildStages.length - 1)]}{status === "ready" ? "已完成" : status === "failed" ? "失败" : "进行中"}</p>
+          <ol className="build-progress-list">
+            {buildStages.map((stage, index) => {
+              const state = stageState(index, activeIndex, status);
+
+              return (
+                <li className={`build-progress-stage is-${state}`} key={stage}>
+                  <span aria-hidden className="build-progress-marker" />
+                  <span className="build-progress-copy"><strong>{stage}</strong><small>{stageLabel(state)}</small></span>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ) : null}
       {events.length === 0 ? (
-        <p className="timeline-empty" style={{ minHeight: 144 }}>提交目标后将在这里显示团队进度。</p>
+        <p className="timeline-empty">提交目标后将在这里显示团队进度。</p>
       ) : (
-        <ol className="timeline-list" style={{ minHeight: 144, margin: 0, padding: 0, listStyle: "none" }}>
+        <ol className="timeline-list">
           {events.map((event, index) => (
             <li
               className="timeline-row"
               key={event.name + "-" + index}
-              style={{
-                alignItems: "center",
-                borderTop: "1px solid #252b27",
-                display: "grid",
-                gap: 9,
-                gridTemplateColumns: "14px 1fr",
-                minHeight: 36,
-              }}
             >
-              <span
-                aria-hidden
-                className="timeline-marker"
-                style={{
-                  background: "#1e2c20",
-                  border: "1px solid var(--lime)",
-                  borderRadius: "50%",
-                  height: 7,
-                  width: 7,
-                }}
-              />
-              <div
-                className="timeline-copy"
-                style={{
-                  display: "grid",
-                  gap: 4,
-                  minWidth: 0,
-                }}
-              >
-                <div style={{ alignItems: "baseline", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
-                  <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName(event)}</strong>
-                  <span style={{ color: "var(--muted)", fontSize: 10, whiteSpace: "nowrap" }}>{statusLabels[event.name] ?? "已更新"}</span>
+              <span aria-hidden className="timeline-marker" />
+              <div className="timeline-copy">
+                <div className="timeline-heading">
+                  <strong>{displayName(event)}</strong>
+                  <span>{statusLabels[event.name] ?? "已更新"}</span>
                 </div>
                 {eventSummary(event) ? (
-                  <p style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.45, margin: 0 }}>
-                    {eventSummary(event)}
-                  </p>
+                  <p>{eventSummary(event)}</p>
                 ) : null}
               </div>
             </li>

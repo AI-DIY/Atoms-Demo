@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { LoaderCircle } from "lucide-react";
+import { FormEvent, useRef, useState } from "react";
 import { loginUser, registerUser, type CurrentUser } from "@/lib/client-api";
 
 export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: CurrentUser) => void }) {
@@ -9,9 +10,15 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: CurrentU
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submittingRef.current) {
+      return;
+    }
+
+    submittingRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -22,6 +29,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: CurrentU
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "操作失败，请稍后重试");
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   }
@@ -33,13 +41,16 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: CurrentU
         <p className="eyebrow">{mode === "login" ? "欢迎回来" : "创建账户"}</p>
         <h1>{mode === "login" ? "登录 Agent Studio" : "开始使用 Agent Studio"}</h1>
         <p className="auth-copy">使用邮箱账户保存你的项目和模型配置。</p>
-        <form className="auth-form" onSubmit={submit}>
-          <label>邮箱<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label>密码<input autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        <form aria-busy={busy} aria-label={mode === "login" ? "账户登录" : "账户注册"} className="auth-form" onSubmit={submit}>
+          <label>邮箱<input autoComplete="email" disabled={busy} required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label>密码<input autoComplete={mode === "login" ? "current-password" : "new-password"} disabled={busy} minLength={8} required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
-          <button className="primary-button" disabled={busy} type="submit">{busy ? "处理中..." : mode === "login" ? "登录" : "注册"}</button>
+          <button className="primary-button" disabled={busy} type="submit">
+            {busy ? <LoaderCircle aria-hidden className="button-spinner" /> : null}
+            <span>{busy ? mode === "login" ? "登录中" : "注册中" : mode === "login" ? "登录" : "注册"}</span>
+          </button>
         </form>
-        <button className="link-button" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}>
+        <button className="link-button" disabled={busy} type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(null); }}>
           {mode === "login" ? "还没有账户？注册" : "已有账户？登录"}
         </button>
       </section>

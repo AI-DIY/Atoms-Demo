@@ -175,6 +175,71 @@ describe("WorkspaceShell", () => {
     });
   });
 
+  it("clears an obsolete approval retry after a 409 response and refreshes the completed project", async () => {
+    window.localStorage.setItem(
+      projectIdentityStorageKey,
+      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
+    );
+    clientApi.loadProject
+      .mockResolvedValueOnce({
+        ...loadedProject,
+        status: "awaiting_approval",
+        runs: [{ id: "completed-run", mode: "team", status: "awaiting_approval" }],
+      })
+      .mockResolvedValueOnce({
+        ...loadedProject,
+        status: "ready",
+        currentVersion: 1,
+        runs: [{ id: "completed-run", mode: "team", status: "completed" }],
+        versions: [{ id: "version-1", version: 1, title: "已完成版本", html: "<h1>已完成</h1>" }],
+      });
+    clientApi.approveRun.mockRejectedValue(new Error("Run is not awaiting approval"));
+
+    render(<WorkspaceShell />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
+
+    await waitFor(() => {
+      expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("button", { name: "开始构建" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+    expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
+    expect(screen.getByTitle("Generated application")).toHaveAttribute("srcdoc", "<h1>已完成</h1>");
+  });
+
+  it("maps an approval run start to the building stage", async () => {
+    const approval = deferred<void>();
+    window.localStorage.setItem(
+      projectIdentityStorageKey,
+      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
+    );
+    clientApi.loadProject.mockResolvedValue({
+      ...loadedProject,
+      status: "awaiting_approval",
+      runs: [{ id: "run-1", mode: "team", status: "awaiting_approval" }],
+    });
+    clientApi.approveRun.mockImplementation(
+      async (
+        _projectId: string,
+        _ownerToken: string,
+        _runId: string,
+        onEvent: (name: string, data: unknown) => void,
+      ) => {
+        onEvent("run.started", { runId: "run-1" });
+        await approval.promise;
+      },
+    );
+
+    render(<WorkspaceShell />);
+    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
+
+    expect(await screen.findByText("构建中")).toBeInTheDocument();
+
+    approval.resolve();
+  });
+
   it("同步 awaiting approval 与 failed 事件到目标状态", async () => {
     clientApi.startRun.mockImplementation(
       async (
@@ -585,7 +650,11 @@ describe("WorkspaceShell", () => {
     };
     clientApi.loadProject
       .mockResolvedValueOnce(loadedProject)
-      .mockResolvedValueOnce({ ...loadedProject, status: "awaiting_approval" })
+      .mockResolvedValueOnce({
+        ...loadedProject,
+        status: "awaiting_approval",
+        runs: [{ id: "run-1", mode: "team", status: "awaiting_approval" }],
+      })
       .mockResolvedValueOnce(completedProject);
     clientApi.startRun.mockImplementation(
       async (

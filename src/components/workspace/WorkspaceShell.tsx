@@ -78,13 +78,18 @@ function statusForEvent(
   name: string,
   payload: Record<string, unknown>,
   mode: RunMode,
+  approvalBuild = false,
 ): LoadedProject["status"] | null {
   if (name === "run.started") {
     if (mode === "mention") {
       return null;
     }
 
-    return mode === "iterate" ? "iterating" : "planning";
+    if (mode === "iterate") {
+      return "iterating";
+    }
+
+    return approvalBuild ? "building" : "planning";
   }
 
   if (name === "step.started") {
@@ -151,11 +156,21 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     if (generation === activeGenerationRef.current) {
       setProject(refreshed);
       const runId = latestAwaitingTeamRunId(refreshed);
+      setPendingApproval(runId, runId ? storedPlanGoal(refreshed, runId) : null);
 
-      if (runId) {
-        const request = storedPlanGoal(refreshed, runId);
-        pendingApprovalRequestRef.current = request;
-        setPendingApprovalRequest(request);
+      if (!runId && refreshed.status === "ready") {
+        setLoadError(null);
+        setLastFailedOperation((current) => current?.kind === "approve" ? null : current);
+      }
+    }
+  }
+
+  async function refreshAfterRun(activeIdentity: ProjectIdentity, generation: number) {
+    try {
+      await refreshProject(activeIdentity, generation);
+    } catch {
+      if (generation === activeGenerationRef.current) {
+        setLoadError((current) => current ?? "运行已结束，但项目刷新失败，请刷新页面后重试。");
       }
     }
   }
@@ -166,6 +181,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     name: string,
     data: unknown,
     failedOperation?: FailedOperation,
+    approvalBuild = false,
   ) {
     if (generation !== activeGenerationRef.current) {
       return;
@@ -173,7 +189,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
 
     const payload = eventData(data);
     setEvents((current) => [...current, { name, data: payload }]);
-    const nextStatus = statusForEvent(name, payload, mode);
+    const nextStatus = statusForEvent(name, payload, mode, approvalBuild);
 
     if (nextStatus) {
       setProject((current) => current ? { ...current, status: nextStatus } : current);
@@ -191,11 +207,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     }
 
     if ((name === "run.awaiting_approval" || name === "run.completed") && identity) {
-      void refreshProject(identity, generation).catch(() => {
-        if (generation === activeGenerationRef.current) {
-          setLoadError("项目状态已更新，但项目刷新失败，请刷新页面后重试。");
-        }
-      });
+      void refreshAfterRun(identity, generation);
     }
 
     if (name === "run.failed") {
@@ -310,19 +322,27 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     setRunning(true);
     setLoadError(null);
     setLastFailedOperation(null);
+    let receivedTerminalEvent = false;
 
     try {
       await approveRun(
         identity.projectId,
         identity.ownerToken,
         runId,
-        (name, data) => receiveEvent(
-          generation,
-          "team",
-          name,
-          data,
-          { kind: "approve", runId, request },
-        ),
+        (name, data) => {
+          if (name === "run.completed" || name === "run.failed") {
+            receivedTerminalEvent = true;
+          }
+
+          receiveEvent(
+            generation,
+            "team",
+            name,
+            data,
+            { kind: "approve", runId, request },
+            true,
+          );
+        },
       );
     } catch (error) {
       if (generation === activeGenerationRef.current) {
@@ -331,6 +351,9 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
       }
     } finally {
       if (generation === activeGenerationRef.current) {
+        if (!receivedTerminalEvent) {
+          await refreshAfterRun(identity, generation);
+        }
         runActiveRef.current = false;
         setRunning(false);
       }
