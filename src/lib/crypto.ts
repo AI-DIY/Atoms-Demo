@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const algorithm = "aes-256-gcm";
@@ -13,24 +13,50 @@ function keyFromSecret(secret: string | undefined): Buffer {
   return createHash("sha256").update(secret).digest();
 }
 
-const persistedSecretPath = path.join(process.cwd(), "prisma", ".model-config-secret");
+const persistedSecretPath = process.env.NODE_ENV === "production" && process.platform === "linux"
+  ? "/var/lib/agent-studio/.model-config-secret"
+  : path.join(process.cwd(), "prisma", ".model-config-secret");
 
-function persistedSecret(): string {
-  if (existsSync(persistedSecretPath)) {
-    return readFileSync(persistedSecretPath, "utf8").trim();
+function resolvedSecretPath(secretPath: string): string {
+  try {
+    if (lstatSync(secretPath).isSymbolicLink()) {
+      return path.resolve(path.dirname(secretPath), readlinkSync(secretPath));
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  return secretPath;
+}
+
+export function getOrCreatePersistedSecret(secretPath = persistedSecretPath): string {
+  const storagePath = resolvedSecretPath(secretPath);
+
+  try {
+    return readFileSync(storagePath, "utf8").trim();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
   }
 
   const secret = randomBytes(32).toString("base64url");
-  mkdirSync(path.dirname(persistedSecretPath), { recursive: true });
+  mkdirSync(path.dirname(storagePath), { recursive: true });
   try {
-    writeFileSync(persistedSecretPath, `${secret}\n`, { mode: 0o600, flag: "wx" });
+    writeFileSync(storagePath, `${secret}\n`, { mode: 0o600, flag: "wx" });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
       throw error;
     }
-    return readFileSync(persistedSecretPath, "utf8").trim();
+    return readFileSync(storagePath, "utf8").trim();
   }
   return secret;
+}
+
+function persistedSecret(): string {
+  return getOrCreatePersistedSecret();
 }
 
 export function encryptSecret(value: string, secret = persistedSecret()): string {

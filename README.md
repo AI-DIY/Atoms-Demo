@@ -44,7 +44,7 @@ pnpm dev
 | `PORT` | 生产 | `3000` | Next standalone 监听端口。 |
 | `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` | 可选 E2E | `/usr/bin/chromium` | 缺少 Playwright 下载浏览器时，提供 Chromium 可执行文件路径；正常 CI 不需要设置。 |
 
-不要创建或使用 `OPENAI_*` 或 `NEXT_PUBLIC_OPENAI_*` 变量。模型 Base URL、API Key 和模型信息全部在登录后的设置页面填写；API Key 使用服务端自动生成并持久化的本地密钥加密保存。
+不要创建或使用 `OPENAI_*` 或 `NEXT_PUBLIC_OPENAI_*` 变量。模型 Base URL、API Key 和模型信息全部在登录后的设置页面填写；API Key 使用服务端自动生成并持久化的本地密钥加密保存。生产环境的加密密钥固定存于 `/var/lib/agent-studio/.model-config-secret`，由服务在首次保存配置时自动创建。
 
 ## 数据库备份与恢复
 
