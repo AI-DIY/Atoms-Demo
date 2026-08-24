@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import OpenAI, { type ClientOptions } from "openai";
 import { parseArtifact } from "@/lib/artifacts";
 import type { AgentContext, AgentOutput, AgentProvider } from "@/lib/provider";
 import { getRole } from "@/lib/roles";
@@ -15,7 +15,7 @@ type JsonSchemaFormat = {
 
 export type ResponsesRequest = {
   model: string;
-  instructions: string;
+  instructions?: string;
   input: string;
   max_output_tokens?: number;
   reasoning?: { effort: "none" | "low" | "medium" | "high" };
@@ -41,8 +41,29 @@ export type OpenAIProviderConfig = {
 
 type OpenAIProviderDependencies = {
   client?: ResponsesClient;
-  createClient?: (options: { baseURL: string; apiKey: string }) => ResponsesClient;
+  createClient?: (options: OpenAIClientOptions) => ResponsesClient;
 };
+
+type OpenAIClientOptions = {
+  baseURL: string;
+  apiKey: string;
+  fetch: ClientOptions["fetch"];
+};
+
+function nativeFetch(): ClientOptions["fetch"] {
+  if (typeof globalThis.fetch !== "function") {
+    throw new Error("Native fetch is unavailable");
+  }
+
+  return globalThis.fetch.bind(globalThis) as unknown as ClientOptions["fetch"];
+}
+
+export function createOpenAIResponsesClient(options: Pick<OpenAIClientOptions, "baseURL" | "apiKey">): ResponsesClient {
+  return new OpenAI({
+    ...options,
+    fetch: nativeFetch(),
+  }) as unknown as ResponsesClient;
+}
 
 function strictJsonInstruction(role: RoleId) {
   const expectedType = getRole(role).artifactType;
@@ -267,8 +288,12 @@ export function createOpenAIProvider(
   }
 
   const client = dependencies.client
-    ?? dependencies.createClient?.({ baseURL: config.baseUrl, apiKey: config.apiKey })
-    ?? new OpenAI({ baseURL: config.baseUrl, apiKey: config.apiKey }) as unknown as ResponsesClient;
+    ?? dependencies.createClient?.({
+      baseURL: config.baseUrl,
+      apiKey: config.apiKey,
+      fetch: nativeFetch(),
+    })
+    ?? createOpenAIResponsesClient({ baseURL: config.baseUrl, apiKey: config.apiKey });
 
   return {
     async generate(role, context) {

@@ -48,10 +48,11 @@ describe("createOpenAIProvider", () => {
 
     const output = await provider.generate("pm", context);
 
-    expect(createClient).toHaveBeenCalledWith({
+    expect(createClient).toHaveBeenCalledWith(expect.objectContaining({
       baseURL: "https://models.example/v1",
       apiKey: "secret",
-    });
+      fetch: expect.any(Function),
+    }));
     expect(client.responses.create).toHaveBeenCalledWith(expect.objectContaining({
       model: "gpt-5.5",
       instructions: expect.stringContaining(getRole("pm").systemInstruction),
@@ -68,6 +69,37 @@ describe("createOpenAIProvider", () => {
       summary: "已整理产品范围。",
       artifact: { type: "prd", content: { users: ["摄影师"] } },
     });
+  });
+
+  it("delegates compatible Responses requests to the Node native fetch implementation", async () => {
+    const nativeFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", nativeFetch);
+    const client = clientReturning(JSON.stringify({
+      summary: "已完成研究。",
+      artifact: {
+        type: "research",
+        content: { findings: ["需求清晰"], assumptions: ["用户使用移动端"] },
+      },
+    }));
+    const createClient = vi.fn().mockReturnValue(client);
+    createOpenAIProvider(
+      { baseUrl: "https://models.example/v1", apiKey: "secret", model: "gpt-5.5" },
+      { createClient },
+    );
+
+    try {
+      const clientOptions = createClient.mock.calls[0]?.[0];
+      expect(clientOptions?.fetch).toEqual(expect.any(Function));
+
+      await clientOptions?.fetch?.("https://models.example/v1/responses", { method: "POST" });
+
+      expect(nativeFetch).toHaveBeenCalledWith(
+        "https://models.example/v1/responses",
+        { method: "POST" },
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("passes optional output and reasoning settings to Responses", async () => {

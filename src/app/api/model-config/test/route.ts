@@ -1,7 +1,7 @@
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-session";
 import { modelConfigInput } from "@/lib/model-config";
+import { createOpenAIResponsesClient } from "@/lib/providers/openai";
 import { readJsonBody } from "@/lib/request-json";
 
 export async function POST(request: Request) {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const client = new OpenAI({ baseURL: parsed.data.baseUrl, apiKey: parsed.data.apiKey });
+    const client = createOpenAIResponsesClient({ baseURL: parsed.data.baseUrl, apiKey: parsed.data.apiKey });
     await client.responses.create({ model: parsed.data.modelId, input: "ping" });
     return NextResponse.json({ ok: true });
   } catch (error) {
