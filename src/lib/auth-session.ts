@@ -93,14 +93,26 @@ export function setSessionCookie(
   response: Response,
   token: string,
   expiresAt: Date,
+  request: Request,
 ) {
-  const cookieValue = `${sessionCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Expires=${expiresAt.toUTCString()}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+  const cookieValue = `${sessionCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Expires=${expiresAt.toUTCString()}${isSecureRequest(request) ? "; Secure" : ""}`;
   response.headers.append("Set-Cookie", cookieValue);
 }
 
-export function clearSessionCookie(response: Response) {
+function isSecureRequest(request: Request): boolean {
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")
+    ?.split(",", 1)[0]
+    ?.trim()
+    .toLowerCase();
+
+  if (forwardedProtocol) return forwardedProtocol === "https";
+
+  return new URL(request.url).protocol === "https:";
+}
+
+export function clearSessionCookie(response: Response, request: Request) {
   response.headers.append(
     "Set-Cookie",
-    `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`,
+    `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isSecureRequest(request) ? "; Secure" : ""}`,
   );
 }

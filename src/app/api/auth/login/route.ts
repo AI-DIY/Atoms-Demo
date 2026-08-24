@@ -32,6 +32,6 @@ export async function POST(request: Request) {
     hasModelConfig: Boolean(await getModelConfig(user.id)),
   });
 
-  setSessionCookie(response, session.token, session.expiresAt);
+  setSessionCookie(response, session.token, session.expiresAt, request);
   return response;
 }

@@ -33,6 +33,6 @@ export async function POST(request: Request) {
     hasModelConfig: false,
   }, { status: 201 });
 
-  setSessionCookie(response, session.token, session.expiresAt);
+  setSessionCookie(response, session.token, session.expiresAt, request);
   return response;
 }
