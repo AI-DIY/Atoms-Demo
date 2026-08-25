@@ -10,6 +10,8 @@ import {
 import { getAgentProvider } from "@/lib/env";
 import { parseFirstMention } from "@/lib/mention";
 import {
+  approvePlan,
+  buildApprovedPlan,
   createTeamPlan,
   runIteration,
   runMention,
@@ -275,19 +277,33 @@ export async function POST(request: Request, { params }: RouteContext) {
         const plan = await createTeamPlan(
           provider,
           input.data.request,
-            persistentCallbacks(projectId, effectiveOwnerToken!, run.id, emit),
+          persistentCallbacks(projectId, effectiveOwnerToken!, run.id, emit),
         );
 
         await updateRun(projectId, effectiveOwnerToken!, run.id, {
-          status: "awaiting_approval",
+          status: "building",
           planJson: JSON.stringify({ goal: plan.goal, artifact: plan.artifact }),
         });
-        await updateProjectStatus(projectId, effectiveOwnerToken!, "awaiting_approval");
-        emit("run.awaiting_approval", { runId: run.id });
+        await updateProjectStatus(projectId, effectiveOwnerToken!, "building");
+
+        const result = await buildApprovedPlan(
+          provider,
+          approvePlan(plan),
+          persistentCallbacks(projectId, effectiveOwnerToken!, run.id, emit),
+        );
+        const version = await createVersion(projectId, effectiveOwnerToken!, {
+          title: result.app.content.title,
+          html: result.app.content.html,
+          sourceRunId: run.id,
+        });
+
+        await completeRun(projectId, effectiveOwnerToken!, run.id, { status: "completed" });
+        await updateProjectStatus(projectId, effectiveOwnerToken!, "ready");
+        emit("run.completed", { runId: run.id, versionId: version.id });
       } catch (error) {
         await completeRun(projectId, effectiveOwnerToken!, run.id, {
           status: "failed",
-          errorCode: "plan_failed",
+          errorCode: "team_failed",
         });
         await updateProjectStatus(projectId, effectiveOwnerToken!, "failed");
         emit("run.failed", { runId: run.id, error: errorMessage(error) });

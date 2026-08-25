@@ -5,7 +5,6 @@ import type { LoadedProject } from "@/lib/client-api";
 import { projectIdentityStorageKey } from "@/lib/project-session";
 
 const clientApi = vi.hoisted(() => ({
-  approveRun: vi.fn(),
   createProject: vi.fn(),
   loadProject: vi.fn(),
   restoreVersion: vi.fn(),
@@ -48,7 +47,6 @@ describe("WorkspaceShell", () => {
     clientApi.loadProject.mockReset();
     clientApi.restoreVersion.mockReset();
     clientApi.startRun.mockReset();
-    clientApi.approveRun.mockReset();
     clientApi.createProject.mockResolvedValue(createdProject);
     clientApi.loadProject.mockResolvedValue(loadedProject);
     clientApi.restoreVersion.mockResolvedValue({ project: loadedProject });
@@ -145,7 +143,7 @@ describe("WorkspaceShell", () => {
     expect(clientApi.createProject).not.toHaveBeenCalled();
   });
 
-  it("restores the latest awaiting team approval after loading the project", async () => {
+  it("does not render a manual approval control for a persisted team plan", async () => {
     window.localStorage.setItem(
       projectIdentityStorageKey,
       JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
@@ -162,85 +160,11 @@ describe("WorkspaceShell", () => {
 
     render(<WorkspaceShell />);
 
-    expect(await screen.findByRole("button", { name: "开始构建" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "开始构建" }));
-
-    await waitFor(() => {
-      expect(clientApi.approveRun).toHaveBeenCalledWith(
-        "project-1",
-        "owner-token-1",
-        "latest-run",
-        expect.any(Function),
-      );
-    });
-  });
-
-  it("clears an obsolete approval retry after a 409 response and refreshes the completed project", async () => {
-    window.localStorage.setItem(
-      projectIdentityStorageKey,
-      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
-    );
-    clientApi.loadProject
-      .mockResolvedValueOnce({
-        ...loadedProject,
-        status: "awaiting_approval",
-        runs: [{ id: "completed-run", mode: "team", status: "awaiting_approval" }],
-      })
-      .mockResolvedValueOnce({
-        ...loadedProject,
-        status: "ready",
-        currentVersion: 1,
-        runs: [{ id: "completed-run", mode: "team", status: "completed" }],
-        versions: [{ id: "version-1", version: 1, title: "已完成版本", html: "<h1>已完成</h1>" }],
-      });
-    clientApi.approveRun.mockRejectedValue(new Error("Run is not awaiting approval"));
-
-    render(<WorkspaceShell />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
-
-    await waitFor(() => {
-      expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
-      expect(screen.queryByRole("button", { name: "开始构建" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    });
-    expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
-    expect(screen.getByTitle("Generated application")).toHaveAttribute("srcdoc", "<h1>已完成</h1>");
-  });
-
-  it("maps an approval run start to the building stage", async () => {
-    const approval = deferred<void>();
-    window.localStorage.setItem(
-      projectIdentityStorageKey,
-      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
-    );
-    clientApi.loadProject.mockResolvedValue({
-      ...loadedProject,
-      status: "awaiting_approval",
-      runs: [{ id: "run-1", mode: "team", status: "awaiting_approval" }],
-    });
-    clientApi.approveRun.mockImplementation(
-      async (
-        _projectId: string,
-        _ownerToken: string,
-        _runId: string,
-        onEvent: (name: string, data: unknown) => void,
-      ) => {
-        onEvent("run.started", { runId: "run-1" });
-        await approval.promise;
-      },
-    );
-
-    render(<WorkspaceShell />);
-    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
-
     expect(await screen.findByText("构建中")).toBeInTheDocument();
-
-    approval.resolve();
+    expect(screen.queryByRole("button", { name: "开始构建" })).not.toBeInTheDocument();
   });
 
-  it("同步 awaiting approval 与 failed 事件到目标状态", async () => {
+  it("同步失败事件到目标状态", async () => {
     clientApi.startRun.mockImplementation(
       async (
         _projectId: string,
@@ -248,7 +172,6 @@ describe("WorkspaceShell", () => {
         _body: unknown,
         onEvent: (name: string, data: unknown) => void,
       ) => {
-        onEvent("run.awaiting_approval", { runId: "run-status" });
         onEvent("run.failed", { error: "计划服务不可用" });
       },
     );
@@ -362,135 +285,6 @@ describe("WorkspaceShell", () => {
     expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("工程师")).toHaveLength(2);
   });
 
-  it("retries a failed approval against the same awaiting run without starting a new plan", async () => {
-    window.localStorage.setItem(
-      projectIdentityStorageKey,
-      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
-    );
-    clientApi.loadProject.mockResolvedValue({
-      ...loadedProject,
-      status: "awaiting_approval",
-      runs: [{ id: "run-retry", mode: "team", status: "awaiting_approval" }],
-      messages: [{ id: "message-1", role: "pm", kind: "assistant", content: "已有计划摘要" }],
-    });
-    clientApi.approveRun.mockRejectedValue(new Error("服务器正忙，请稍后重试。"));
-    render(<WorkspaceShell />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("服务器正忙，请稍后重试。");
-    });
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-
-    await waitFor(() => {
-      expect(clientApi.approveRun).toHaveBeenCalledTimes(2);
-      expect(clientApi.approveRun).toHaveBeenNthCalledWith(
-        2,
-        "project-1",
-        "owner-token-1",
-        "run-retry",
-        expect.any(Function),
-      );
-    });
-    expect(clientApi.startRun).not.toHaveBeenCalled();
-    expect(screen.getByText("已有计划摘要")).toBeInTheDocument();
-  });
-
-  it("restarts a team plan when an approval stream reports run.failed", async () => {
-    window.localStorage.setItem(
-      projectIdentityStorageKey,
-      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
-    );
-    clientApi.loadProject.mockResolvedValue({
-      ...loadedProject,
-      status: "awaiting_approval",
-      runs: [{
-        id: "claimed-run",
-        mode: "team",
-        status: "awaiting_approval",
-        planJson: JSON.stringify({ goal: "为婚礼摄影师创建客户接待流程" }),
-      }],
-      messages: [{ id: "message-1", role: "pm", kind: "assistant", content: "已有计划摘要" }],
-    });
-    clientApi.approveRun.mockImplementation(
-      async (
-        _projectId: string,
-        _ownerToken: string,
-        _runId: string,
-        onEvent: (name: string, data: unknown) => void,
-      ) => {
-        onEvent("run.failed", { error: "构建服务不可用" });
-      },
-    );
-    render(<WorkspaceShell />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("构建服务不可用");
-    });
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-
-    await waitFor(() => {
-      expect(clientApi.startRun).toHaveBeenCalledWith(
-        "project-1",
-        "owner-token-1",
-        { mode: "team", request: "为婚礼摄影师创建客户接待流程" },
-        expect.any(Function),
-      );
-    });
-    expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("已有计划摘要")).toBeInTheDocument();
-  });
-
-  it("retries an immediately failed approval with the pending team request before refresh returns", async () => {
-    const refresh = deferred<LoadedProject>();
-    const teamRequest = "为婚礼摄影师创建客户接待与报价跟进流程";
-    clientApi.loadProject
-      .mockResolvedValueOnce(loadedProject)
-      .mockReturnValueOnce(refresh.promise);
-    clientApi.startRun.mockImplementation(
-      async (
-        _projectId: string,
-        _ownerToken: string,
-        _body: unknown,
-        onEvent: (name: string, data: unknown) => void,
-      ) => {
-        onEvent("run.awaiting_approval", { runId: "pending-run" });
-      },
-    );
-    clientApi.approveRun.mockImplementation(
-      async (
-        _projectId: string,
-        _ownerToken: string,
-        _runId: string,
-        onEvent: (name: string, data: unknown) => void,
-      ) => {
-        onEvent("run.failed", { error: "构建服务不可用" });
-      },
-    );
-    render(<WorkspaceShell />);
-
-    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
-    fireEvent.change(goal, { target: { value: teamRequest } });
-    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
-    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("构建服务不可用");
-    });
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-
-    await waitFor(() => {
-      expect(clientApi.startRun).toHaveBeenNthCalledWith(
-        2,
-        "project-1",
-        "owner-token-1",
-        { mode: "team", request: teamRequest },
-        expect.any(Function),
-      );
-    });
-  });
-
   it("在 reviewer 开始验收时更新目标状态", async () => {
     clientApi.startRun.mockImplementation(
       async (
@@ -510,33 +304,6 @@ describe("WorkspaceShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
 
     expect(await screen.findByText("验收中")).toBeInTheDocument();
-  });
-
-  it("在审批流未结束时只提交一次审批请求", async () => {
-    const approval = deferred<void>();
-    window.localStorage.setItem(
-      projectIdentityStorageKey,
-      JSON.stringify({ projectId: "project-1", ownerToken: "owner-token-1" }),
-    );
-    clientApi.loadProject.mockResolvedValueOnce({
-      ...loadedProject,
-      status: "awaiting_approval",
-      runs: [{ id: "run-1", mode: "team", status: "awaiting_approval" }],
-    });
-    clientApi.approveRun.mockReturnValue(approval.promise);
-
-    render(<WorkspaceShell />);
-
-    const approveButton = await screen.findByRole("button", { name: "开始构建" });
-    fireEvent.click(approveButton);
-    fireEvent.click(approveButton);
-
-    await waitFor(() => {
-      expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
-      expect(approveButton).toBeDisabled();
-    });
-
-    approval.resolve();
   });
 
   it("在团队计划流未结束时禁用重复提交", async () => {
@@ -559,82 +326,7 @@ describe("WorkspaceShell", () => {
     plan.resolve();
   });
 
-  it("忽略旧运行事件和旧完成读取，保留新计划状态", async () => {
-    const staleRefresh = deferred<typeof loadedProject>();
-    let planEvents: ((name: string, data: unknown) => void) | undefined;
-    let approvalEvents: ((name: string, data: unknown) => void) | undefined;
-    clientApi.loadProject
-      .mockResolvedValueOnce(loadedProject)
-      .mockReturnValueOnce(staleRefresh.promise);
-    clientApi.startRun
-      .mockImplementationOnce(
-        async (
-          _projectId: string,
-          _ownerToken: string,
-          _body: unknown,
-          onEvent: (name: string, data: unknown) => void,
-        ) => {
-          planEvents = onEvent;
-          onEvent("run.awaiting_approval", { runId: "run-1" });
-        },
-      )
-      .mockImplementationOnce(
-        async (
-          _projectId: string,
-          _ownerToken: string,
-          _body: unknown,
-          onEvent: (name: string, data: unknown) => void,
-        ) => {
-          onEvent("run.awaiting_approval", { runId: "run-2" });
-        },
-      );
-    clientApi.approveRun.mockImplementation(
-      async (
-        _projectId: string,
-        _ownerToken: string,
-        _runId: string,
-        onEvent: (name: string, data: unknown) => void,
-      ) => {
-        approvalEvents = onEvent;
-        onEvent("run.completed", { runId: "run-1", versionId: "version-1" });
-      },
-    );
-
-    render(<WorkspaceShell />);
-
-    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
-    fireEvent.change(goal, { target: { value: "第一个计划" } });
-    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
-    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
-
-    await waitFor(() => {
-      expect(clientApi.approveRun).toHaveBeenCalledTimes(1);
-    });
-
-    fireEvent.change(goal, { target: { value: "第二个计划" } });
-    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
-    await screen.findByRole("button", { name: "开始构建" });
-
-    planEvents?.("run.failed", { error: "旧运行失败" });
-    approvalEvents?.("run.failed", { error: "旧审批失败" });
-    staleRefresh.resolve({
-      ...loadedProject,
-      status: "ready",
-      currentVersion: 1,
-      versions: [{ id: "version-1", version: 1, title: "旧版本", html: "<h1>旧版本</h1>" }],
-    });
-
-    await waitFor(() => {
-      expect(screen.getAllByText("等待审批")).not.toHaveLength(0);
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    });
-    expect(screen.getByTitle("Generated application")).not.toHaveAttribute(
-      "srcdoc",
-      expect.stringContaining("旧版本"),
-    );
-  });
-
-  it("starts a team plan, approves it, and refreshes the completed version", async () => {
+  it("starts a team build and refreshes the completed version without approval", async () => {
     const completedProject = {
       ...loadedProject,
       currentVersion: 1,
@@ -650,11 +342,6 @@ describe("WorkspaceShell", () => {
     };
     clientApi.loadProject
       .mockResolvedValueOnce(loadedProject)
-      .mockResolvedValueOnce({
-        ...loadedProject,
-        status: "awaiting_approval",
-        runs: [{ id: "run-1", mode: "team", status: "awaiting_approval" }],
-      })
       .mockResolvedValueOnce(completedProject);
     clientApi.startRun.mockImplementation(
       async (
@@ -663,16 +350,9 @@ describe("WorkspaceShell", () => {
         _body: unknown,
         onEvent: (name: string, data: unknown) => void,
       ) => {
-        onEvent("run.awaiting_approval", { runId: "run-1" });
-      },
-    );
-    clientApi.approveRun.mockImplementation(
-      async (
-        _projectId: string,
-        _ownerToken: string,
-        _runId: string,
-        onEvent: (name: string, data: unknown) => void,
-      ) => {
+        onEvent("step.started", { runId: "run-1", role: "leader" });
+        onEvent("step.started", { runId: "run-1", role: "engineer" });
+        onEvent("step.started", { runId: "run-1", role: "reviewer" });
         onEvent("run.completed", { runId: "run-1", versionId: "version-1" });
       },
     );
@@ -692,17 +372,10 @@ describe("WorkspaceShell", () => {
       );
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "开始构建" }));
-
     await waitFor(() => {
-      expect(clientApi.approveRun).toHaveBeenCalledWith(
-        "project-1",
-        "owner-token-1",
-        "run-1",
-        expect.any(Function),
-      );
-      expect(clientApi.loadProject).toHaveBeenCalledTimes(3);
+      expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
     });
+    expect(screen.queryByRole("button", { name: "开始构建" })).not.toBeInTheDocument();
     expect(screen.getByTitle("Generated application")).toHaveAttribute(
       "srcdoc",
       expect.stringContaining("构建完成"),
@@ -764,13 +437,13 @@ describe("WorkspaceShell", () => {
     expect(clientApi.loadProject).toHaveBeenCalledTimes(2);
   });
 
-  it("刷新等待审批后已持久化的团队问题", async () => {
+  it("刷新自动构建后已持久化的团队问题", async () => {
     const request = "为摄影师创建预约与报价工具";
     clientApi.loadProject
       .mockResolvedValueOnce(loadedProject)
       .mockResolvedValueOnce({
         ...loadedProject,
-        status: "awaiting_approval",
+        status: "ready",
         messages: [
           { id: "message-user", role: "user", kind: "user", content: request },
         ],
@@ -782,7 +455,7 @@ describe("WorkspaceShell", () => {
         _body: unknown,
         onEvent: (name: string, data: unknown) => void,
       ) => {
-        onEvent("run.awaiting_approval", { runId: "team-run" });
+        onEvent("run.completed", { runId: "team-run", versionId: "version-1" });
       },
     );
 

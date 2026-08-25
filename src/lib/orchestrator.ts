@@ -142,7 +142,7 @@ export async function createTeamPlan(
 ): Promise<TeamPlan> {
   const leaderStep = await runRole(provider, "leader", {
     goal,
-    request: "制定默认交付团队计划，并说明需要用户确认的风险。",
+    request: "制定默认交付团队计划，并标注实施风险与处理方式。",
     artifacts: [],
   }, callbacks);
 
@@ -174,12 +174,12 @@ export async function buildApprovedPlan(
   const validatedPlan = parseArtifact("plan", plan.artifact.content);
   const pmStep = await runRole(provider, "pm", {
     goal: plan.goal,
-    request: "根据已批准团队计划整理产品需求和验收标准。",
+    request: "根据团队计划整理产品需求和验收标准。",
     artifacts: [validatedPlan],
   }, callbacks);
   const architectStep = await runRole(provider, "architect", {
     goal: plan.goal,
-    request: "根据已批准的计划和产品需求确定页面、状态与约束。",
+    request: "根据团队计划和产品需求确定页面、状态与约束。",
     artifacts: [validatedPlan, pmStep.artifact],
   }, callbacks);
   const engineerStep = await runRole(provider, "engineer", {

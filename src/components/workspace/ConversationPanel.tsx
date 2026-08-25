@@ -5,7 +5,6 @@ import { useState } from "react";
 import type { ProjectMessage } from "@/lib/client-api";
 import { roles } from "@/lib/roles";
 import { AgentTimeline, type TimelineEvent } from "./AgentTimeline";
-import { PlanApprovalCard } from "./PlanApprovalCard";
 
 function timelineEventsWithoutPersistedSummaries(
   events: TimelineEvent[],
@@ -53,13 +52,11 @@ export function ConversationPanel({
   loading,
   messages,
   running,
-  onApprove,
   onRequestPlan,
   onRetry,
   projectGoal,
   projectTitle,
   status,
-  awaitingApproval,
   canRetry = true,
 }: {
   error: string | null;
@@ -67,13 +64,11 @@ export function ConversationPanel({
   loading: boolean;
   messages: ProjectMessage[];
   running: boolean;
-  onApprove: () => void;
   onRequestPlan: (request: string) => void;
   onRetry: (request: string) => void;
   projectGoal: string;
   projectTitle: string;
   status: string;
-  awaitingApproval: boolean;
   canRetry?: boolean;
 }) {
   const [request, setRequest] = useState<string | null>(null);
@@ -96,7 +91,7 @@ export function ConversationPanel({
   const statusText: Record<string, string> = {
     draft: "草稿",
     planning: "制定计划",
-    awaiting_approval: "等待审批",
+    awaiting_approval: "构建中",
     building: "构建中",
     reviewing: "验收中",
     ready: "已就绪",
@@ -149,13 +144,6 @@ export function ConversationPanel({
           </ol>
         ) : null}
         <AgentTimeline events={timelineEvents} running={running} status={status} />
-        {awaitingApproval ? (
-          <PlanApprovalCard
-            disabled={running}
-            onApprove={onApprove}
-            roles={["pm", "architect", "engineer"]}
-          />
-        ) : null}
       </div>
 
       <form className="composer" onSubmit={submit}>

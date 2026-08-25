@@ -100,7 +100,7 @@ describe("realtime run event streams", () => {
     await prisma.$disconnect();
   });
 
-  it("streams run and step starts before the plan provider resolves", async () => {
+  it("streams run and step starts before the automatic team build resolves", async () => {
     const provider = new DelayedFirstResponseProvider();
     getAgentProvider.mockReturnValue(provider);
     const project = await createProject({
@@ -140,7 +140,10 @@ describe("realtime run event streams", () => {
     const completedEvents = await readRemaining(reader);
 
     expect(completedEvents).toContain("event: step.completed");
-    expect(completedEvents).toContain("event: run.awaiting_approval");
+    expect(completedEvents).toMatch(
+      /role":"leader"[\s\S]*role":"pm"[\s\S]*role":"architect"[\s\S]*role":"engineer"[\s\S]*role":"reviewer"[\s\S]*event: run\.completed/u,
+    );
+    expect(completedEvents).not.toContain("event: run.awaiting_approval");
     await responsePromise;
   });
 
@@ -224,8 +227,9 @@ describe("realtime run event streams", () => {
       await vi.waitFor(async () => {
         const loaded = await getProject(project.id, project.ownerToken);
 
-        expect(loaded.status).toBe("awaiting_approval");
-        expect(loaded.runs[0]).toMatchObject({ status: "awaiting_approval" });
+        expect(loaded.status).toBe("ready");
+        expect(loaded.runs[0]).toMatchObject({ status: "completed" });
+        expect(loaded.versions).toHaveLength(1);
       });
       expect(unhandledRejections).toEqual([]);
     } finally {

@@ -10,7 +10,6 @@ describe("ConversationPanel", () => {
   it("renders persisted mention messages once when the matching SSE step is present", () => {
     render(
       <ConversationPanel
-        awaitingApproval={false}
         error={null}
         events={[
           {
@@ -37,7 +36,6 @@ describe("ConversationPanel", () => {
             content: "已整理目标用户和风险假设。",
           },
         ]}
-        onApprove={vi.fn()}
         onRequestPlan={vi.fn()}
         onRetry={vi.fn()}
         projectGoal="为摄影师创建预约工具"
@@ -55,12 +53,10 @@ describe("ConversationPanel", () => {
     const onRetry = vi.fn();
     render(
       <ConversationPanel
-        awaitingApproval={false}
         error="服务器正忙，请稍后重试。"
         events={[]}
         loading={false}
         messages={[]}
-        onApprove={vi.fn()}
         onRequestPlan={vi.fn()}
         onRetry={onRetry}
         projectGoal="为摄影师创建预约工具"
@@ -82,12 +78,10 @@ describe("ConversationPanel", () => {
     const onRequestPlan = vi.fn();
     render(
       <ConversationPanel
-        awaitingApproval={false}
         error={null}
         events={[]}
         loading={false}
         messages={[]}
-        onApprove={vi.fn()}
         onRequestPlan={onRequestPlan}
         onRetry={vi.fn()}
         projectGoal="为摄影师创建预约工具"

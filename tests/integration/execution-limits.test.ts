@@ -259,7 +259,7 @@ describe("execution limits", () => {
 
     provider.release();
     await vi.waitFor(async () => {
-      await expect(getProject(project.id, project.ownerToken)).resolves.toMatchObject({ status: "awaiting_approval" });
+      await expect(getProject(project.id, project.ownerToken)).resolves.toMatchObject({ status: "ready" });
     });
 
     const next = await startRun(runRequest(project.id, project.ownerToken, "198.51.100.14", "team"), context);

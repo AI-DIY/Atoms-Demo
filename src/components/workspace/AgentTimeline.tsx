@@ -11,7 +11,7 @@ const statusLabels: Record<string, string> = {
   "step.started": "进行中",
   "step.completed": "已完成",
   "step.failed": "失败",
-  "run.awaiting_approval": "等待审批",
+  "run.awaiting_approval": "自动构建",
   "run.completed": "已完成",
   "run.failed": "失败",
 };
@@ -23,21 +23,20 @@ export type TimelineEvent = {
 
 type StageState = "pending" | "active" | "completed" | "failed";
 
-const buildStages = ["规划", "审批", "构建", "验收"] as const;
+const buildStages = ["规划", "构建", "验收"] as const;
 
 function activeStageIndex(status: string, events: TimelineEvent[]) {
   if (status === "failed") {
     const lastStartedStep = [...events].reverse().find((event) => event.name === "step.started");
     const role = lastStartedStep?.data.role;
 
-    if (role === "reviewer") return 3;
+    if (role === "reviewer") return 2;
     if (role === "leader") return 0;
-    return 2;
+    return 1;
   }
 
-  if (status === "awaiting_approval") return 1;
-  if (status === "building" || status === "iterating") return 2;
-  if (status === "reviewing") return 3;
+  if (status === "awaiting_approval" || status === "building" || status === "iterating") return 1;
+  if (status === "reviewing") return 2;
   if (status === "ready") return buildStages.length;
   return 0;
 }

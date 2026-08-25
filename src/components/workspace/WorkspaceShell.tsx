@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  approveRun,
   createProject,
   loadProject,
   restoreVersion,
@@ -30,55 +29,13 @@ function eventData(data: unknown): Record<string, unknown> {
   return data && typeof data === "object" ? data as Record<string, unknown> : {};
 }
 
-function latestAwaitingTeamRunId(project: LoadedProject): string | null {
-  const pendingRuns = (project.runs ?? []).filter(
-    (run) => run.mode === "team" && run.status === "awaiting_approval",
-  );
-  const latest = pendingRuns.reduce<typeof pendingRuns[number] | undefined>(
-    (current, run) => {
-      if (!current) {
-        return run;
-      }
-
-      return (run.startedAt ?? "") > (current.startedAt ?? "") ? run : current;
-    },
-    undefined,
-  );
-
-  return latest?.id ?? null;
-}
-
-function storedPlanGoal(project: LoadedProject | null, runId: string): string | null {
-  const planJson = project?.runs?.find((run) => run.id === runId)?.planJson;
-
-  if (typeof planJson !== "string") {
-    return null;
-  }
-
-  try {
-    const plan: unknown = JSON.parse(planJson);
-
-    if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
-      return null;
-    }
-
-    const goal = Reflect.get(plan, "goal");
-    return typeof goal === "string" && goal.trim().length > 0 ? goal : null;
-  } catch {
-    return null;
-  }
-}
-
 type RunMode = "team" | "mention" | "iterate";
-type FailedOperation =
-  | { kind: "run"; mode: RunMode; request: string }
-  | { kind: "approve"; runId: string; request: string };
+type FailedOperation = { mode: RunMode; request: string };
 
 function statusForEvent(
   name: string,
   payload: Record<string, unknown>,
   mode: RunMode,
-  approvalBuild = false,
 ): LoadedProject["status"] | null {
   if (name === "run.started") {
     if (mode === "mention") {
@@ -89,7 +46,7 @@ function statusForEvent(
       return "iterating";
     }
 
-    return approvalBuild ? "building" : "planning";
+    return "planning";
   }
 
   if (name === "step.started") {
@@ -108,10 +65,6 @@ function statusForEvent(
     return payload.role === "reviewer" ? "reviewing" : "building";
   }
 
-  if (name === "run.awaiting_approval") {
-    return "awaiting_approval";
-  }
-
   if (name === "run.completed") {
     return mode === "mention" ? null : "ready";
   }
@@ -127,8 +80,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
   const [identity, setIdentity] = useState<ProjectIdentity | null>(null);
   const [project, setProject] = useState<LoadedProject | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [approvalRunId, setApprovalRunId] = useState<string | null>(null);
-  const [pendingApprovalRequest, setPendingApprovalRequest] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -142,25 +93,16 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
   const generationRef = useRef(0);
   const runActiveRef = useRef(false);
   const restoreActiveRef = useRef(false);
-  const pendingApprovalRequestRef = useRef<string | null>(null);
-
-  function setPendingApproval(runId: string | null, request: string | null) {
-    setApprovalRunId(runId);
-    pendingApprovalRequestRef.current = request;
-    setPendingApprovalRequest(request);
-  }
 
   async function refreshProject(activeIdentity: ProjectIdentity, generation: number) {
     const refreshed = await loadProject(activeIdentity);
 
     if (generation === activeGenerationRef.current) {
       setProject(refreshed);
-      const runId = latestAwaitingTeamRunId(refreshed);
-      setPendingApproval(runId, runId ? storedPlanGoal(refreshed, runId) : null);
 
-      if (!runId && refreshed.status === "ready") {
+      if (refreshed.status === "ready") {
         setLoadError(null);
-        setLastFailedOperation((current) => current?.kind === "approve" ? null : current);
+        setLastFailedOperation(null);
       }
     }
   }
@@ -181,7 +123,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     name: string,
     data: unknown,
     failedOperation?: FailedOperation,
-    approvalBuild = false,
   ) {
     if (generation !== activeGenerationRef.current) {
       return;
@@ -189,40 +130,20 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
 
     const payload = eventData(data);
     setEvents((current) => [...current, { name, data: payload }]);
-    const nextStatus = statusForEvent(name, payload, mode, approvalBuild);
+    const nextStatus = statusForEvent(name, payload, mode);
 
     if (nextStatus) {
       setProject((current) => current ? { ...current, status: nextStatus } : current);
     }
 
-    if (name === "run.awaiting_approval" && typeof payload.runId === "string") {
-      const request = failedOperation?.kind === "run" && failedOperation.mode === "team"
-        ? failedOperation.request
-        : storedPlanGoal(project, payload.runId);
-      setPendingApproval(payload.runId, request);
-    }
-
-    if (name === "run.completed") {
-      setPendingApproval(null, null);
-    }
-
-    if ((name === "run.awaiting_approval" || name === "run.completed") && identity) {
+    if (name === "run.completed" && identity) {
       void refreshAfterRun(identity, generation);
     }
 
     if (name === "run.failed") {
-      setPendingApproval(null, null);
       const error = typeof payload.error === "string" ? payload.error : "团队运行失败，请重试。";
       setLoadError(error);
-      if (failedOperation?.kind === "approve") {
-        setLastFailedOperation({
-          kind: "run",
-          mode: "team",
-          request: failedOperation.request,
-        });
-      } else if (failedOperation) {
-        setLastFailedOperation(failedOperation);
-      }
+      if (failedOperation) setLastFailedOperation(failedOperation);
     }
   }
 
@@ -238,8 +159,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
         if (!cancelled) {
           setProject(loadedProject);
           setIdentity(readProjectIdentity(window.localStorage));
-          const runId = latestAwaitingTeamRunId(loadedProject);
-          setPendingApproval(runId, runId ? storedPlanGoal(loadedProject, runId) : null);
         }
       })
       .catch(() => {
@@ -268,7 +187,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     setRunning(true);
     setLoadError(null);
     setLastFailedOperation(null);
-    setPendingApproval(null, null);
     if (!preserveHistory) {
       setEvents([]);
     }
@@ -288,72 +206,16 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
           mode,
           name,
           data,
-          { kind: "run", mode, request },
+          { mode, request },
         ),
       );
     } catch (error) {
       if (generation === activeGenerationRef.current) {
         setLoadError(error instanceof Error ? error.message : "制定团队计划失败，请稍后重试。");
-        setLastFailedOperation({ kind: "run", mode, request });
+        setLastFailedOperation({ mode, request });
       }
     } finally {
       if (generation === activeGenerationRef.current) {
-        runActiveRef.current = false;
-        setRunning(false);
-      }
-    }
-  }
-
-  async function approvePlan(runId = approvalRunId, capturedRequest?: string) {
-    if (!identity || !runId || runActiveRef.current || restoreActiveRef.current) {
-      return;
-    }
-
-    const request = capturedRequest
-      ?? pendingApprovalRequestRef.current
-      ?? pendingApprovalRequest
-      ?? storedPlanGoal(project, runId)
-      ?? project?.goal
-      ?? defaultProject.goal;
-
-    const generation = ++generationRef.current;
-    activeGenerationRef.current = generation;
-    runActiveRef.current = true;
-    setRunning(true);
-    setLoadError(null);
-    setLastFailedOperation(null);
-    let receivedTerminalEvent = false;
-
-    try {
-      await approveRun(
-        identity.projectId,
-        identity.ownerToken,
-        runId,
-        (name, data) => {
-          if (name === "run.completed" || name === "run.failed") {
-            receivedTerminalEvent = true;
-          }
-
-          receiveEvent(
-            generation,
-            "team",
-            name,
-            data,
-            { kind: "approve", runId, request },
-            true,
-          );
-        },
-      );
-    } catch (error) {
-      if (generation === activeGenerationRef.current) {
-        setLoadError(error instanceof Error ? error.message : "开始构建失败，请稍后重试。");
-        setLastFailedOperation({ kind: "approve", runId, request });
-      }
-    } finally {
-      if (generation === activeGenerationRef.current) {
-        if (!receivedTerminalEvent) {
-          await refreshAfterRun(identity, generation);
-        }
         runActiveRef.current = false;
         setRunning(false);
       }
@@ -362,11 +224,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
 
   function retryLastFailure() {
     if (!lastFailedOperation) return;
-
-    if (lastFailedOperation.kind === "approve") {
-      void approvePlan(lastFailedOperation.runId, lastFailedOperation.request);
-      return;
-    }
 
     void requestPlan(
       lastFailedOperation.request,
@@ -398,7 +255,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
       setIdentity(nextIdentity);
       setProject(nextProject);
       setEvents([]);
-      setPendingApproval(null, null);
       setLoadError(null);
       setRestoreError(null);
       setLastFailedOperation(null);
@@ -468,15 +324,11 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
       </aside>
       <section aria-label="Agent conversation" className="conversation">
         <ConversationPanel
-          awaitingApproval={Boolean(approvalRunId)}
           canRetry={Boolean(lastFailedOperation)}
           error={loadError}
           events={events}
           loading={!project && !loadError}
           messages={project?.messages ?? []}
-          onApprove={() => {
-            void approvePlan();
-          }}
           onRequestPlan={(request) => {
             void requestPlan(request);
           }}
