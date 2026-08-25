@@ -40,4 +40,22 @@ describe("AgentTimeline", () => {
     expect(within(progress).getByText("验收")).toBeInTheDocument();
     expect(within(progress).queryByText("审批")).not.toBeInTheDocument();
   });
+
+  it("replaces a role's running entry with its completed terminal state", () => {
+    const { container } = render(
+      <AgentTimeline
+        events={[
+          { name: "step.started", data: { role: "leader" } },
+          { name: "step.completed", data: { role: "leader", summary: "计划已完成。" } },
+          { name: "run.completed", data: {} },
+        ]}
+        status="ready"
+      />,
+    );
+
+    const timeline = within(container).getByLabelText("智能体运行时间线");
+    expect(within(timeline).getAllByText("团队负责人")).toHaveLength(1);
+    expect(within(timeline).queryByText("进行中")).not.toBeInTheDocument();
+    expect(within(timeline).getByText("计划已完成。").parentElement).toHaveTextContent("已完成");
+  });
 });

@@ -89,7 +89,7 @@ describe("execution limits", () => {
     await prisma.$disconnect();
   });
 
-  it("rejects the sixth model start for the same IP", async () => {
+  it("allows repeated model starts from the same IP", async () => {
     const project = await createProject({ title: "限流测试", goal: "为摄影师创建预约与报价工具" });
 
     for (let index = 0; index < 5; index += 1) {
@@ -100,12 +100,12 @@ describe("execution limits", () => {
       expect(response.status).toBe(200);
     }
 
-    const rejected = await startRun(runRequest(project.id, project.ownerToken, "198.51.100.10"), {
+    const sixth = await startRun(runRequest(project.id, project.ownerToken, "198.51.100.10"), {
       params: Promise.resolve({ projectId: project.id }),
     });
 
-    expect(rejected.status).toBe(429);
-    await expect(rejected.json()).resolves.toEqual({ error: "请求过于频繁，请稍后重试。" });
+    expect(sixth.status).toBe(200);
+    await sixth.text();
   });
 
   it("rejects a run request whose declared content length exceeds the safety limit before starting a model", async () => {
@@ -162,7 +162,7 @@ describe("execution limits", () => {
     await expect(getProject(project.id, project.ownerToken)).resolves.toMatchObject({ runs: [] });
   });
 
-  it("counts approvals in the same IP model-start window", async () => {
+  it("does not rate limit an approval after repeated model starts from the same IP", async () => {
     const project = await createProject({ title: "审批限流测试", goal: "为摄影师创建预约与报价工具" });
     const run = await createRun(project.id, project.ownerToken, {
       mode: "team",
@@ -178,7 +178,7 @@ describe("execution limits", () => {
       await response.text();
     }
 
-    const rejected = await approveRun(
+    const accepted = await approveRun(
       new Request(`http://localhost/api/projects/${project.id}/runs/${run.id}/approve`, {
         method: "POST",
         headers: { "x-project-token": project.ownerToken, "x-forwarded-for": ip },
@@ -186,10 +186,11 @@ describe("execution limits", () => {
       { params: Promise.resolve({ projectId: project.id, runId: run.id }) },
     );
 
-    expect(rejected.status).toBe(429);
+    expect(accepted.status).toBe(200);
+    await accepted.text();
     const loaded = await getProject(project.id, project.ownerToken);
     expect(loaded.runs.find((storedRun) => storedRun.id === run.id)).toMatchObject({
-      status: "awaiting_approval",
+      status: "completed",
     });
   });
 

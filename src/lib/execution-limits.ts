@@ -2,7 +2,6 @@ import { ConcurrencyGate } from "@/lib/concurrency";
 import { createRateLimiter } from "@/lib/rate-limit";
 
 const windowMs = 10 * 60 * 1000;
-const modelStartRateLimiter = createRateLimiter(5, windowMs);
 const projectCreationRateLimiter = createRateLimiter(5, windowMs);
 
 export const teamGenerationGate = new ConcurrencyGate(1);
@@ -17,8 +16,8 @@ export function clientIpFromRequest(request: Request): string {
   return realIp || forwarded || "unknown";
 }
 
-export function allowModelStart(request: Request): boolean {
-  return modelStartRateLimiter.allow(clientIpFromRequest(request), Date.now());
+export function allowModelStart(_request: Request): boolean {
+  return true;
 }
 
 export function allowProjectCreation(request: Request): boolean {
@@ -26,6 +25,5 @@ export function allowProjectCreation(request: Request): boolean {
 }
 
 export function resetExecutionLimitsForTests(): void {
-  modelStartRateLimiter.reset();
   projectCreationRateLimiter.reset();
 }

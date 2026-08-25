@@ -74,6 +74,49 @@ function eventSummary(event: TimelineEvent) {
   return typeof event.data.summary === "string" ? event.data.summary : null;
 }
 
+function eventKey(event: TimelineEvent): string | null {
+  const role = event.data.role;
+
+  if (typeof role === "string" && event.name.startsWith("step.")) {
+    return `step:${role}`;
+  }
+
+  return event.name.startsWith("run.") ? "run" : null;
+}
+
+function compactEvents(events: TimelineEvent[]): TimelineEvent[] {
+  const compacted: TimelineEvent[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (const event of events) {
+    const key = eventKey(event);
+
+    if (!key) {
+      compacted.push(event);
+      continue;
+    }
+
+    const priorIndex = indexByKey.get(key);
+
+    if (priorIndex === undefined) {
+      indexByKey.set(key, compacted.length);
+      compacted.push(event);
+      continue;
+    }
+
+    const prior = compacted[priorIndex];
+    compacted[priorIndex] = {
+      ...event,
+      data: {
+        ...prior.data,
+        ...event.data,
+      },
+    };
+  }
+
+  return compacted;
+}
+
 export function AgentTimeline({
   events,
   running = false,
@@ -84,6 +127,7 @@ export function AgentTimeline({
   status?: string;
 }) {
   const activeIndex = activeStageIndex(status, events);
+  const displayedEvents = compactEvents(events);
 
   return (
     <section aria-label="智能体运行时间线" className="agent-timeline">
@@ -105,11 +149,11 @@ export function AgentTimeline({
           </ol>
         </section>
       ) : null}
-      {events.length === 0 ? (
+      {displayedEvents.length === 0 ? (
         <p className="timeline-empty">提交目标后将在这里显示团队进度。</p>
       ) : (
         <ol className="timeline-list">
-          {events.map((event, index) => (
+          {displayedEvents.map((event, index) => (
             <li
               className="timeline-row"
               key={event.name + "-" + index}

@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProjectMessage } from "@/lib/client-api";
 import { roles } from "@/lib/roles";
 import { AgentTimeline, type TimelineEvent } from "./AgentTimeline";
@@ -72,8 +72,17 @@ export function ConversationPanel({
   canRetry?: boolean;
 }) {
   const [request, setRequest] = useState<string | null>(null);
-  const activeRequest = request ?? projectGoal;
+  const isEditingCurrentResult = status === "ready";
+  const requestLabel = isEditingCurrentResult ? "描述希望修改的内容" : "描述你要构建的产品";
+  const submitLabel = isEditingCurrentResult ? "修改当前成果" : "制定团队计划";
+  const activeRequest = request ?? (isEditingCurrentResult ? "" : projectGoal);
   const candidates = mentionCandidates(activeRequest);
+
+  useEffect(() => {
+    if (isEditingCurrentResult) {
+      setRequest("");
+    }
+  }, [isEditingCurrentResult]);
 
   function selectMention(roleLabel: string) {
     setRequest(activeRequest.replace(/@[^\s，,。.!！?？]*$/u, `@${roleLabel} `));
@@ -126,7 +135,7 @@ export function ConversationPanel({
           <p role="alert">{error}</p>
           {canRetry ? (
             <button disabled={running} onClick={() => onRetry(activeRequest.trim())} type="button">
-              重试
+              {running ? "重试中" : "重试"}
             </button>
           ) : null}
         </div>
@@ -165,9 +174,9 @@ export function ConversationPanel({
             </div>
           ) : null}
           <textarea
-            aria-label="描述你要构建的产品"
+            aria-label={requestLabel}
             onChange={(event) => setRequest(event.target.value)}
-            placeholder="描述你要构建的产品"
+            placeholder={requestLabel}
             rows={2}
             value={activeRequest}
           />
@@ -186,10 +195,10 @@ export function ConversationPanel({
             type="submit"
           >
             <ArrowUp aria-hidden />
-            <span>制定团队计划</span>
+            <span>{submitLabel}</span>
           </button>
         </div>
-        <p className="composer-help">@ 专家直接咨询；按目标发起团队协作</p>
+        <p className="composer-help">{isEditingCurrentResult ? "输入意见后将基于当前成果生成新版本" : "@ 专家直接咨询；按目标发起团队协作"}</p>
       </form>
     </div>
   );

@@ -74,6 +74,45 @@ describe("ConversationPanel", () => {
     expect(onRetry).toHaveBeenCalledWith("改为支持报价跟进");
   });
 
+  it("shows a disabled retry control while retrying", () => {
+    render(
+      <ConversationPanel
+        error="连接中断，正在重试。"
+        events={[]}
+        loading={false}
+        messages={[]}
+        onRequestPlan={vi.fn()}
+        onRetry={vi.fn()}
+        projectGoal="为摄影师创建预约工具"
+        projectTitle="摄影预约助手"
+        running
+        status="failed"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "重试中" })).toBeDisabled();
+  });
+
+  it("labels a ready project's composer as an edit of the current result", () => {
+    render(
+      <ConversationPanel
+        error={null}
+        events={[]}
+        loading={false}
+        messages={[]}
+        onRequestPlan={vi.fn()}
+        onRetry={vi.fn()}
+        projectGoal="为摄影师创建预约工具"
+        projectTitle="摄影预约助手"
+        running={false}
+        status="ready"
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "描述希望修改的内容" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "修改当前成果" })).toBeInTheDocument();
+  });
+
   it("offers matching experts after an @ and inserts the selected mention", () => {
     const onRequestPlan = vi.fn();
     render(

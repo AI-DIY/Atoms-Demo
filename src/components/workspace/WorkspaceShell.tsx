@@ -137,6 +137,8 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     }
 
     if (name === "run.completed" && identity) {
+      setLoadError(null);
+      setLastFailedOperation(null);
       void refreshAfterRun(identity, generation);
     }
 
@@ -176,6 +178,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     request: string,
     preserveHistory = false,
     retryMode?: RunMode,
+    preserveError = false,
   ) {
     if (!identity || runActiveRef.current || restoreActiveRef.current) {
       return;
@@ -185,8 +188,12 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     activeGenerationRef.current = generation;
     runActiveRef.current = true;
     setRunning(true);
-    setLoadError(null);
-    setLastFailedOperation(null);
+    if (!preserveError) {
+      setLoadError(null);
+    }
+    if (!preserveError) {
+      setLastFailedOperation(null);
+    }
     if (!preserveHistory) {
       setEvents([]);
     }
@@ -229,6 +236,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
       lastFailedOperation.request,
       true,
       lastFailedOperation.mode,
+      true,
     );
   }
 

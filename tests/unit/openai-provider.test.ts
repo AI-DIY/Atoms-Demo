@@ -223,7 +223,35 @@ describe("createOpenAIProvider", () => {
     expect(client.responses.create).toHaveBeenLastCalledWith(expect.not.objectContaining({ text: expect.anything() }));
   });
 
-  it("does not retry an ordinary API failure or expose the API key", async () => {
+  it("retries a transient Responses connection failure before returning the model output", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const client: ResponsesClient = {
+      responses: {
+        create: vi.fn()
+          .mockRejectedValueOnce(new TypeError("fetch failed"))
+          .mockResolvedValueOnce({ output_text: JSON.stringify({
+            summary: "已完成研究。",
+            artifact: {
+              type: "research",
+              content: { findings: ["需求清晰"], assumptions: ["用户使用移动端"] },
+            },
+          }) }),
+      },
+    };
+    const provider = createOpenAIProvider(
+      { baseUrl: "https://models.example/v1", apiKey: "secret", model: "gpt-5.5" },
+      { client, sleep },
+    );
+
+    await expect(provider.generate("research", context)).resolves.toMatchObject({
+      artifact: { type: "research" },
+    });
+    expect(client.responses.create).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a transient API failure and does not expose the API key", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
     const client: ResponsesClient = {
       responses: {
         create: vi.fn().mockRejectedValue(Object.assign(
@@ -234,11 +262,12 @@ describe("createOpenAIProvider", () => {
     };
     const provider = createOpenAIProvider(
       { baseUrl: "https://models.example/v1", apiKey: "secret", model: "gpt-5.5" },
-      { client },
+      { client, sleep },
     );
 
     await expect(provider.generate("research", context)).rejects.toThrow("[REDACTED]");
-    expect(client.responses.create).toHaveBeenCalledTimes(1);
+    expect(client.responses.create).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
   });
 
   it("repairs an invalid structured response exactly once with the same schema", async () => {

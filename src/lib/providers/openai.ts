@@ -42,6 +42,7 @@ export type OpenAIProviderConfig = {
 type OpenAIProviderDependencies = {
   client?: ResponsesClient;
   createClient?: (options: OpenAIClientOptions) => ResponsesClient;
+  sleep?: (milliseconds: number) => Promise<void>;
 };
 
 type OpenAIClientOptions = {
@@ -252,6 +253,64 @@ function safeError(error: unknown, apiKey: string): Error {
   return new Error(message.split(apiKey).join("[REDACTED]"));
 }
 
+const retryDelaysMs = [300, 900] as const;
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function errorStatus(error: unknown): number | null {
+  if (!isObject(error) || typeof error.status !== "number") {
+    return null;
+  }
+
+  return error.status;
+}
+
+function isRetryableResponsesError(error: unknown): boolean {
+  const status = errorStatus(error);
+
+  if (status !== null) {
+    return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+  }
+
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /(?:abort|connection|econn|fetch failed|network|socket|timed? out|timeout)/iu.test(
+    `${error.name} ${error.message}`,
+  );
+}
+
+async function createResponseWithRetry(
+  client: ResponsesClient,
+  request: ResponsesRequest,
+  wait: (milliseconds: number) => Promise<void>,
+): Promise<{ output_text: string }> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      return await client.responses.create(request);
+    } catch (error) {
+      lastError = error;
+
+      if (!isRetryableResponsesError(error) || attempt === retryDelaysMs.length) {
+        throw error;
+      }
+
+      await wait(retryDelaysMs[attempt]);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Model request failed");
+}
+
 function contextInput(context: AgentContext) {
   return {
     goal: context.goal,
@@ -294,6 +353,7 @@ export function createOpenAIProvider(
       fetch: nativeFetch(),
     })
     ?? createOpenAIResponsesClient({ baseURL: config.baseUrl, apiKey: config.apiKey });
+  const wait = dependencies.sleep ?? sleep;
 
   return {
     async generate(role, context) {
@@ -302,13 +362,13 @@ export function createOpenAIProvider(
       let structured = true;
 
       try {
-        response = await client.responses.create({
+        response = await createResponseWithRetry(client, {
           model: config.model,
           instructions: strictJsonInstruction(role),
           input,
           ...optionalRequestConfig(config),
           ...structuredOutput(role),
-        });
+        }, wait);
       } catch (error) {
         if (!isStructuredOutputUnsupported(error)) {
           throw safeError(error, config.apiKey);
@@ -317,12 +377,12 @@ export function createOpenAIProvider(
         structured = false;
 
         try {
-          response = await client.responses.create({
+          response = await createResponseWithRetry(client, {
             model: config.model,
             instructions: fallbackJsonInstruction(role),
             input,
             ...optionalRequestConfig(config),
-          });
+          }, wait);
         } catch (fallbackError) {
           throw safeError(fallbackError, config.apiKey);
         }
@@ -334,13 +394,13 @@ export function createOpenAIProvider(
         let repaired: { output_text: string };
 
         try {
-          repaired = await client.responses.create({
+          repaired = await createResponseWithRetry(client, {
             model: config.model,
             instructions: repairInstruction(role),
             input: repairInput(role, context, response.output_text),
             ...optionalRequestConfig(config),
             ...(structured ? structuredOutput(role) : {}),
-          });
+          }, wait);
         } catch (repairError) {
           throw safeError(repairError, config.apiKey);
         }

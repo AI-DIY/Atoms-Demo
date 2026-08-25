@@ -33,11 +33,13 @@ const loadedProject: LoadedProject = {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
 
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe("WorkspaceShell", () => {
@@ -236,7 +238,29 @@ describe("WorkspaceShell", () => {
         expect.any(Function),
       );
     });
-    expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("团队负责人")).toHaveLength(2);
+    expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("团队负责人")).toHaveLength(1);
+  });
+
+  it("keeps the retry control disabled while a retry is pending and restores it after failure", async () => {
+    const retry = deferred<void>();
+    clientApi.startRun
+      .mockRejectedValueOnce(new Error("连接中断"))
+      .mockReturnValueOnce(retry.promise);
+    render(<WorkspaceShell />);
+
+    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    fireEvent.change(goal, { target: { value: "为摄影师创建预约工具" } });
+    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByRole("button", { name: "重试中" })).toBeDisabled();
+
+    retry.reject(new Error("连接仍然中断"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
+      expect(screen.getByRole("alert")).toHaveTextContent("连接仍然中断");
+    });
   });
 
   it("retries a run.failed stream with its original iteration request while preserving project content", async () => {
@@ -260,9 +284,9 @@ describe("WorkspaceShell", () => {
     );
     render(<WorkspaceShell />);
 
-    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    const goal = await screen.findByPlaceholderText("描述希望修改的内容");
     fireEvent.change(goal, { target: { value: "将预约表单改为双列布局" } });
-    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改当前成果" }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("构建服务不可用");
@@ -282,7 +306,7 @@ describe("WorkspaceShell", () => {
         expect.any(Function),
       );
     });
-    expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("工程师")).toHaveLength(2);
+    expect(within(screen.getByLabelText("智能体运行时间线")).getAllByText("工程师")).toHaveLength(1);
   });
 
   it("在 reviewer 开始验收时更新目标状态", async () => {
@@ -478,9 +502,9 @@ describe("WorkspaceShell", () => {
     });
     render(<WorkspaceShell />);
 
-    const goal = await screen.findByPlaceholderText("描述你要构建的产品");
+    const goal = await screen.findByPlaceholderText("描述希望修改的内容");
     fireEvent.change(goal, { target: { value: "将预约表单改为双列布局" } });
-    fireEvent.click(screen.getByRole("button", { name: "制定团队计划" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改当前成果" }));
 
     await waitFor(() => {
       expect(clientApi.startRun).toHaveBeenCalledWith(
@@ -563,7 +587,7 @@ describe("WorkspaceShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "版本" }));
     fireEvent.click(screen.getByRole("button", { name: "V1" }));
 
-    const submit = screen.getByRole("button", { name: "制定团队计划" });
+    const submit = screen.getByRole("button", { name: "修改当前成果" });
     await waitFor(() => expect(submit).toBeDisabled());
     fireEvent.click(submit);
     expect(clientApi.startRun).not.toHaveBeenCalled();
