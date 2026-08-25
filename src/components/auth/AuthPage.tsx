@@ -40,7 +40,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: CurrentU
         <div className="brand auth-brand"><div className="brand-mark">A</div><div><span className="brand-name">Agent Studio</span><span className="brand-subtitle">Goal to working app</span></div></div>
         <p className="eyebrow">{mode === "login" ? "欢迎回来" : "创建账户"}</p>
         <h1>{mode === "login" ? "登录 Agent Studio" : "开始使用 Agent Studio"}</h1>
-        <p className="auth-copy">使用邮箱账户保存你的项目和模型配置。</p>
+        <p className="auth-copy">使用邮箱账户保存你的项目与构建记录。</p>
         <form aria-busy={busy} aria-label={mode === "login" ? "账户登录" : "账户注册"} className="auth-form" onSubmit={submit}>
           <label>邮箱<input autoComplete="email" disabled={busy} required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label>密码<input autoComplete={mode === "login" ? "current-password" : "new-password"} disabled={busy} minLength={8} required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>

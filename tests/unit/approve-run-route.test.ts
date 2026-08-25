@@ -97,6 +97,7 @@ describe("approve run route", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ error: "暂时无法开始构建，请稍后重试。" });
+    expect(dependencies.getAgentProvider).toHaveBeenCalledWith(process.env);
     expect(dependencies.gate.isBusy()).toBe(false);
 
     const release = await dependencies.gate.acquire();

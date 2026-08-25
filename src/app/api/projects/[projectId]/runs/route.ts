@@ -28,8 +28,6 @@ import {
   updateRun,
   getProjectForUser,
 } from "@/lib/repository";
-import { getModelConfig, } from "@/lib/user-repository";
-import { modelConfigForProvider } from "@/lib/model-config";
 import { readBoundedJsonBody } from "@/lib/request-body";
 import { maxRunRequestBytes } from "@/lib/run-input";
 import { streamRunEvents, type RunEventEmitter } from "@/lib/run-events";
@@ -171,11 +169,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   let provider;
 
   try {
-    const config = user ? await getModelConfig(user.id) : null;
-    if (user && !config) {
-      return NextResponse.json({ error: "请先完成模型配置" }, { status: 503 });
-    }
-    provider = getAgentProvider(process.env, undefined, config ? await modelConfigForProvider(config) : undefined);
+    provider = getAgentProvider(process.env);
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });
   }

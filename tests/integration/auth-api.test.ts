@@ -33,8 +33,6 @@ describe("auth API", () => {
     await expect(response.json()).resolves.toEqual({
       authenticated: true,
       email: "user@example.com",
-      onboardingCompleted: false,
-      hasModelConfig: false,
     });
   });
 

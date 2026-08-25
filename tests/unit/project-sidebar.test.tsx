@@ -22,4 +22,10 @@ describe("ProjectSidebar", () => {
     expect(screen.getByTestId("registry-role-icon")).toBeInTheDocument();
     expect(screen.queryByText("团队负责人")).not.toBeInTheDocument();
   });
+
+  it("does not expose a per-user model configuration entry", () => {
+    render(<ProjectSidebar loading={false} title="测试项目" />);
+
+    expect(screen.queryByRole("button", { name: "模型配置" })).not.toBeInTheDocument();
+  });
 });

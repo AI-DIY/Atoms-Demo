@@ -19,7 +19,6 @@ import {
 } from "@/lib/project-session";
 import { parseFirstMention } from "@/lib/mention";
 import { ConversationPanel } from "./ConversationPanel";
-import { ModelConfigForm } from "../auth/ModelConfigForm";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { PreviewPanel } from "./PreviewPanel";
 import { ProjectSidebar } from "./ProjectSidebar";
@@ -88,7 +87,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const activeGenerationRef = useRef(0);
   const generationRef = useRef(0);
   const runActiveRef = useRef(false);
@@ -326,7 +324,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
           }}
           title={title}
           email={userEmail}
-          onModelConfig={() => setSettingsOpen(true)}
           onLogout={() => { void logoutUser().then(() => window.location.reload()); }}
         />
       </aside>
@@ -369,14 +366,6 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
             void createNewProject(input);
           }}
         />
-      ) : null}
-      {settingsOpen ? (
-        <div className="dialog-backdrop" role="presentation">
-          <section className="model-config-dialog" aria-label="模型配置">
-            <header><p className="eyebrow">账户设置</p><h2>模型配置</h2><p>修改当前用户的 Responses API 连接和模型参数。</p></header>
-            <ModelConfigForm onSaved={() => setSettingsOpen(false)} onCancel={() => setSettingsOpen(false)} />
-          </section>
-        </div>
       ) : null}
     </>
   );

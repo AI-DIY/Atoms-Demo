@@ -29,8 +29,6 @@ export async function POST(request: Request) {
   const response = NextResponse.json({
     authenticated: true,
     email: user.email,
-    onboardingCompleted: user.onboardingCompleted,
-    hasModelConfig: false,
   }, { status: 201 });
 
   setSessionCookie(response, session.token, session.expiresAt, request);

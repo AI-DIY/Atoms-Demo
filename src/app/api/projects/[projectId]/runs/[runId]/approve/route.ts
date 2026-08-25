@@ -3,7 +3,6 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth-session";
 import { parseArtifact, type PlanArtifact } from "@/lib/artifacts";
 import { getAgentProvider } from "@/lib/env";
-import { modelConfigForProvider } from "@/lib/model-config";
 import { allowModelStart, teamGenerationGate } from "@/lib/execution-limits";
 import {
   approvePlan,
@@ -21,7 +20,6 @@ import {
   getProjectForUser,
   updateProjectStatus,
 } from "@/lib/repository";
-import { getModelConfig } from "@/lib/user-repository";
 import { streamRunEvents, type RunEventEmitter } from "@/lib/run-events";
 
 const storedPlan = z.object({
@@ -134,11 +132,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   let plan: TeamPlan;
 
   try {
-    const config = user ? await getModelConfig(user.id) : null;
-    if (user && !config) {
-      return NextResponse.json({ error: "请先完成模型配置" }, { status: 503 });
-    }
-    provider = getAgentProvider(process.env, undefined, config ? await modelConfigForProvider(config) : undefined);
+    provider = getAgentProvider(process.env);
     plan = approvePlan(readStoredPlan(run.planJson));
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 503 });

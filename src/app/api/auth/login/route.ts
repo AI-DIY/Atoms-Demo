@@ -3,7 +3,7 @@ import { z } from "zod";
 import { normalizeEmail, verifyPassword } from "@/lib/auth";
 import { createSession, setSessionCookie } from "@/lib/auth-session";
 import { readJsonBody } from "@/lib/request-json";
-import { findUserByEmail, getModelConfig } from "@/lib/user-repository";
+import { findUserByEmail } from "@/lib/user-repository";
 
 const loginInput = z.object({
   email: z.string().trim().email().transform(normalizeEmail),
@@ -28,8 +28,6 @@ export async function POST(request: Request) {
   const response = NextResponse.json({
     authenticated: true,
     email: user.email,
-    onboardingCompleted: user.onboardingCompleted,
-    hasModelConfig: Boolean(await getModelConfig(user.id)),
   });
 
   setSessionCookie(response, session.token, session.expiresAt, request);

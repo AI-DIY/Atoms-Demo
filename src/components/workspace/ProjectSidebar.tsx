@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Plus, Settings } from "lucide-react";
+import { LogOut, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { ArtifactType, RoleId } from "@/lib/domain";
 import { roles } from "@/lib/roles";
@@ -33,7 +33,6 @@ export function ProjectSidebar({
   onCreate = () => undefined,
   title,
   email,
-  onModelConfig,
   onLogout,
 }: {
   creating?: boolean;
@@ -41,7 +40,6 @@ export function ProjectSidebar({
   onCreate?: () => void;
   title: string;
   email?: string;
-  onModelConfig?: () => void;
   onLogout?: () => void;
 }) {
   return (
@@ -99,7 +97,6 @@ export function ProjectSidebar({
         <span>{email ?? "当前用户"}</span>
       </div>
       <div className="sidebar-account-actions">
-        <button className="small-button" aria-label="模型配置" title="模型配置" type="button" onClick={onModelConfig}><Settings size={15} aria-hidden /></button>
         <button className="small-button" aria-label="退出登录" title="退出登录" type="button" onClick={onLogout}><LogOut size={15} aria-hidden /></button>
       </div>
     </div>

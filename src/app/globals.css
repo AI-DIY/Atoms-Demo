@@ -98,10 +98,6 @@ button { cursor: pointer; }
 .new-project-dialog footer button { border: 1px solid var(--line); border-radius: 6px; padding: 8px 11px; color: var(--text); background: transparent; }
 .new-project-dialog footer .dialog-submit { color: #142014; border-color: var(--lime); background: var(--lime); }
 .new-project-dialog button:disabled, .project-button:disabled { cursor: not-allowed; opacity: .55; }
-.model-config-dialog { width: min(100%, 720px); max-height: min(92vh, 760px); overflow: auto; padding: 22px; border: 1px solid #4a544c; border-radius: 8px; background: #191d1a; box-shadow: 0 20px 50px rgba(0, 0, 0, .35); }
-.model-config-dialog header { margin-bottom: 18px; }
-.model-config-dialog h2 { margin: 0; font-size: 19px; }
-.model-config-dialog header p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .feed { flex: 1; overflow: auto; padding: 2px 18px 20px; }
 .feed-heading { margin: 13px 0 10px; color: var(--faint); font-size: 11px; font-weight: 650; }
@@ -181,17 +177,16 @@ button { cursor: pointer; }
 .version-button span { color: var(--text); font-size: 12px; font-weight: 700; }
 .version-button small { color: var(--faint); font-size: 10px; }
 
-.auth-page, .onboarding-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--canvas); }
-.auth-card, .onboarding-card { width: min(100%, 680px); padding: 30px; border: 1px solid #3e493f; border-radius: 8px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.25); }
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--canvas); }
+.auth-card { width: min(100%, 680px); padding: 30px; border: 1px solid #3e493f; border-radius: 8px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.25); }
 .auth-card { width: min(100%, 440px); }
 .auth-brand { padding: 0 0 28px; }
-.auth-card h1, .onboarding-card h1 { margin: 0; font-size: 25px; line-height: 1.25; }
+.auth-card h1 { margin: 0; font-size: 25px; line-height: 1.25; }
 .auth-copy { margin: 9px 0 22px; color: var(--muted); font-size: 13px; line-height: 1.6; }
-.auth-form, .model-config-form { display: grid; gap: 14px; }
-.auth-form label, .model-config-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
-.auth-form input, .model-config-form input, .model-config-form select, .model-config-form textarea { width: 100%; border: 1px solid #4b574d; border-radius: 6px; padding: 10px 11px; color: var(--text); background: #111411; outline: none; }
-.model-config-form textarea { resize: vertical; line-height: 1.5; }
-.auth-form input:focus, .model-config-form input:focus, .model-config-form select:focus, .model-config-form textarea:focus { border-color: var(--lime); }
+.auth-form { display: grid; gap: 14px; }
+.auth-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.auth-form input { width: 100%; border: 1px solid #4b574d; border-radius: 6px; padding: 10px 11px; color: var(--text); background: #111411; outline: none; }
+.auth-form input:focus { border-color: var(--lime); }
 .primary-button, .secondary-button { border: 1px solid var(--lime); border-radius: 6px; padding: 10px 13px; font-weight: 700; }
 .primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: #142014; background: var(--lime); }
 .secondary-button { color: var(--text); border-color: #57665a; background: transparent; }
@@ -209,10 +204,9 @@ button { cursor: pointer; }
 .wizard-steps span { padding: 9px 10px; border-bottom: 2px solid var(--line); color: var(--faint); font-size: 11px; }
 .wizard-steps span.done { color: var(--lime); border-color: #5f7c58; }
 .wizard-steps span.active { color: var(--text); border-color: var(--lime); }
-.onboarding-card > .primary-button { margin-top: 8px; }
 
 @media (max-width: 620px) {
-  .auth-card, .onboarding-card { padding: 22px; }
+  .auth-card { padding: 22px; }
   .form-grid { grid-template-columns: 1fr; }
   .form-actions { flex-wrap: wrap; justify-content: flex-start; }
   .build-progress-list { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; }
