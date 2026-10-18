@@ -5,6 +5,7 @@ export function createNextConfig(platform = process.platform): NextConfig {
   return {
     output: platform === "win32" ? undefined : "standalone",
     outputFileTracingRoot: path.resolve(__dirname),
+    experimental: { cpus: 1 },
   };
 }
 

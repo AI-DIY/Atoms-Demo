@@ -151,7 +151,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       return NextResponse.json({ error: "Iteration cannot include a mention" }, { status: 400 });
     }
 
-    if (project.status !== "ready" || project.currentVersion < 1) {
+    if (!["ready", "failed"].includes(project.status) || project.currentVersion < 1) {
       return NextResponse.json({ error: "Project is not ready for iteration" }, { status: 409 });
     }
 
@@ -224,12 +224,12 @@ export async function POST(request: Request, { params }: RouteContext) {
           );
           await completeRun(projectId, effectiveOwnerToken!, run.id, { status: "completed" });
           emit("run.completed", { runId: run.id });
-        } catch {
+        } catch (error) {
           await completeRun(projectId, effectiveOwnerToken!, run.id, {
             status: "failed",
             errorCode: "mention_failed",
           });
-          emit("run.failed", { runId: run.id, error: "运行失败" });
+          emit("run.failed", { runId: run.id, error: errorMessage(error) });
         }
 
         return;
@@ -255,13 +255,13 @@ export async function POST(request: Request, { params }: RouteContext) {
           await completeRun(projectId, effectiveOwnerToken!, run.id, { status: "completed" });
           await updateProjectStatus(projectId, effectiveOwnerToken!, "ready");
           emit("run.completed", { runId: run.id, versionId: version.id });
-        } catch {
+        } catch (error) {
           await completeRun(projectId, effectiveOwnerToken!, run.id, {
             status: "failed",
             errorCode: "iteration_failed",
           });
           await updateProjectStatus(projectId, effectiveOwnerToken!, "failed");
-          emit("run.failed", { runId: run.id, error: "运行失败" });
+          emit("run.failed", { runId: run.id, error: errorMessage(error) });
         }
 
         return;

@@ -7,14 +7,17 @@ Wants=network-online.target
 Type=simple
 User=agentstudio
 Group=agentstudio
-WorkingDirectory=/opt/agent-studio/.next/standalone
+WorkingDirectory=/opt/agent-studio/current/.next/standalone
 EnvironmentFile=/etc/agent-studio.env
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1
 Environment=PORT=3000
-ExecStart=/usr/bin/node server.js
+ExecStart=/opt/agent-studio/runtime/node/bin/node server.js
 Restart=always
 RestartSec=5
+MemoryMax=650M
+CPUQuota=120%
+Nice=5
 
 NoNewPrivileges=true
 PrivateTmp=true

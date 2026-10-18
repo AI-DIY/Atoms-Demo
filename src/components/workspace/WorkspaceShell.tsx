@@ -7,6 +7,8 @@ import {
   restoreVersion,
   startRun,
   logoutUser,
+  listProjects,
+  type ProjectSummary,
   type LoadedProject,
   type ProjectIdentity,
   type ProjectInput,
@@ -77,6 +79,10 @@ function statusForEvent(
 
 export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
   const [identity, setIdentity] = useState<ProjectIdentity | null>(null);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [providerMode, setProviderMode] = useState("正在检查生成服务");
+  const [mentionDraft, setMentionDraft] = useState<{ text: string; sequence: number }>();
+  const [switching, setSwitching] = useState(false);
   const [project, setProject] = useState<LoadedProject | null>(null);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -97,6 +103,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
 
     if (generation === activeGenerationRef.current) {
       setProject(refreshed);
+      if (userEmail) void listProjects().then(setProjects).catch(() => undefined);
 
       if (refreshed.status === "ready") {
         setLoadError(null);
@@ -152,13 +159,14 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
 
     void restoreOrCreateProject({
       storage: window.localStorage,
-      api: { createProject, loadProject },
+      api: { createProject, loadProject, ...(userEmail ? { listProjects } : {}) },
       defaultProject,
     })
       .then((loadedProject) => {
         if (!cancelled) {
           setProject(loadedProject);
           setIdentity(readProjectIdentity(window.localStorage));
+          if (userEmail) void listProjects().then(setProjects).catch(() => undefined);
         }
       })
       .catch(() => {
@@ -170,7 +178,28 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     return () => {
       cancelled = true;
     };
+  }, [userEmail]);
+
+  useEffect(() => {
+    void fetch("/api/health").then((response) => response.json()).then((health) => {
+      setProviderMode(health.status !== "ok" ? "生成服务未配置" : health.mode === "demo" ? "演示模式 · 内置模板" : "真实 AI · Responses API");
+    }).catch(() => setProviderMode("生成服务暂不可用"));
   }, []);
+
+  async function switchProject(id: string) {
+    if (running || restoring || switching || creatingProject || id === identity?.projectId) return;
+    const generation = ++generationRef.current;
+    activeGenerationRef.current = generation;
+    setSwitching(true);
+    try {
+      const nextIdentity = { projectId: id, ownerToken: "session" };
+      const next = await loadProject(nextIdentity);
+      window.localStorage.setItem(projectIdentityStorageKey, JSON.stringify(nextIdentity));
+      setIdentity(nextIdentity); setProject(next); setEvents([]); setLoadError(null);
+      setRestoreError(null); setLastFailedOperation(null); setMentionDraft({ text: next.currentVersion ? "" : next.goal, sequence: Date.now() });
+    } catch { setLoadError("切换项目失败，请重试。"); }
+    finally { setSwitching(false); }
+  }
 
   async function requestPlan(
     request: string,
@@ -178,7 +207,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     retryMode?: RunMode,
     preserveError = false,
   ) {
-    if (!identity || runActiveRef.current || restoreActiveRef.current) {
+    if (!identity || switching || runActiveRef.current || restoreActiveRef.current) {
       return;
     }
 
@@ -197,7 +226,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
     }
     const mode: RunMode = retryMode ?? (parseFirstMention(request)
       ? "mention"
-      : project?.status === "ready"
+      : project?.status === "ready" || (project?.status === "failed" && project.currentVersion > 0)
         ? "iterate"
         : "team");
 
@@ -260,6 +289,8 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
       window.localStorage.setItem(projectIdentityStorageKey, JSON.stringify(nextIdentity));
       setIdentity(nextIdentity);
       setProject(nextProject);
+      setMentionDraft({ text: nextProject.goal, sequence: Date.now() });
+      if (userEmail) void listProjects().then(setProjects).catch(() => undefined);
       setEvents([]);
       setLoadError(null);
       setRestoreError(null);
@@ -296,6 +327,7 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
 
       if (generation === activeGenerationRef.current) {
         setProject(restored.project);
+        setProjects((items) => items.map((item) => item.id === restored.project.id ? { ...item, currentVersion: restored.project.currentVersion } : item));
       }
     } catch (error) {
       if (generation === activeGenerationRef.current) {
@@ -316,7 +348,12 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
       <main className="workspace">
       <aside aria-label="Projects" className="sidebar">
         <ProjectSidebar
-          creating={creatingProject || running || restoring}
+          creating={creatingProject || running || restoring || switching}
+          projects={projects}
+          activeProjectId={identity?.projectId}
+          onSelect={(id) => void switchProject(id)}
+          onMention={(label) => setMentionDraft({ text: `@${label} `, sequence: Date.now() })}
+          providerMode={providerMode}
           loading={!project && !loadError}
           onCreate={() => {
             setCreateError(null);
@@ -329,9 +366,11 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
       </aside>
       <section aria-label="Agent conversation" className="conversation">
         <ConversationPanel
+          mentionDraft={mentionDraft}
           canRetry={Boolean(lastFailedOperation)}
           error={loadError}
           events={events}
+          runs={project?.runs ?? []}
           loading={!project && !loadError}
           messages={project?.messages ?? []}
           onRequestPlan={(request) => {
@@ -342,12 +381,18 @@ export function WorkspaceShell({ userEmail }: { userEmail?: string } = {}) {
           }}
           projectGoal={goal}
           projectTitle={title}
-          running={running || restoring}
+          running={running || restoring || switching || !identity}
           status={project?.status ?? "加载中"}
         />
       </section>
       <section aria-label="Application preview" className="preview-region">
         <PreviewPanel
+          key={project?.id}
+          projectId={userEmail ? project?.id : undefined}
+          shareToken={project?.shareToken}
+          publishedVersion={project?.publishedVersion}
+          onPublished={() => { if (identity) void refreshProject(identity, activeGenerationRef.current); }}
+          busy={running || restoring || switching || project?.status !== "ready"}
           currentVersion={project?.currentVersion ?? 0}
           onRestore={restoreSelectedVersion}
           projectTitle={title}

@@ -17,6 +17,7 @@ export function clientIpFromRequest(request: Request): string {
 }
 
 export function allowModelStart(_request: Request): boolean {
+  void _request;
   return true;
 }
 

@@ -14,6 +14,10 @@ model Project {
   goal           String
   status         String       @default("draft")
   currentVersion Int          @default(0)
+  shareToken     String?      @unique
+  publishedVersion Int?
+  publishedAt    DateTime?
+  appStateJson   String       @default("{}")
   ownerToken     String       @unique
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -21,6 +25,8 @@ model Project {
   runs           Run[]
   versions       AppVersion[]
   user          User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, updatedAt])
 }
 
 model User {

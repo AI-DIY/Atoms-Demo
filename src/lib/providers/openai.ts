@@ -63,6 +63,8 @@ export function createOpenAIResponsesClient(options: Pick<OpenAIClientOptions, "
   return new OpenAI({
     ...options,
     fetch: nativeFetch(),
+    timeout: 120_000,
+    maxRetries: 0,
   }) as unknown as ResponsesClient;
 }
 

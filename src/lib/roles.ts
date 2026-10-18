@@ -54,7 +54,7 @@ export const roles: readonly AgentRole[] = [
     icon: Wrench,
     artifactType: "app",
     systemInstruction:
-      "你只能交付一个不超过 50 KB 的完整 HTML 文档。HTML 必须不依赖外部资源、脚本、样式、字体或网络请求，并保留所需的内联交互。对 PM 的每一条验收标准，必须在对应的 HTML 元素上添加完全相同的 data-acceptance 属性值。",
+      "你只能交付一个不超过 50 KB 的完整 HTML 文档。HTML 必须不依赖外部资源、脚本、样式、字体或网络请求，并保留所需的内联交互。使用 localStorage.getItem/setItem 持久化业务数据（宿主提供项目隔离存储，总容量 64 KB），使用 JSON 序列化，初始化时恢复；不要使用 IndexedDB、cookie 或 sessionStorage。表单用 preventDefault 处理。对 PM 的每一条验收标准，必须在对应的静态 HTML 元素上添加完全相同的 data-acceptance 属性值；动态功能的标记放在静态容器上，不能仅在 JavaScript 中通过 dataset 或 setAttribute 设置。迭代时以 artifacts 中的 app 为基础应用 request 指定的变化，保留其余功能与存储键。界面应有清楚的标题、留白、空状态和响应式布局。",
     aliases: ["工程师", "开发工程师", "engineer"],
   },
   {

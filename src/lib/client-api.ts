@@ -21,7 +21,7 @@ export type ProjectRun = {
   status: string;
   planJson?: string | null;
   startedAt?: string;
-  steps?: Array<{ role: string; status: string }>;
+  steps?: Array<{ role: string; status: string; inputSummary?: string; artifactType?: string | null; artifactJson?: string | null }>;
 };
 
 export type ProjectMessage = {
@@ -42,10 +42,24 @@ export type LoadedProject = ProjectInput & {
   id: string;
   status: string;
   currentVersion: number;
+  shareToken?: string | null;
+  publishedVersion?: number | null;
   messages?: ProjectMessage[];
   runs?: ProjectRun[];
   versions?: ProjectVersion[];
 };
+
+export type ProjectSummary = ProjectInput & { id: string; status: string; currentVersion: number };
+
+export async function listProjects(): Promise<ProjectSummary[]> {
+  return (await readJson<{ projects: ProjectSummary[] }>(await fetch("/api/projects"))).projects;
+}
+
+export async function publishProject(projectId: string, unpublish = false) {
+  return readJson<{ shareToken: string | null; publishedVersion: number | null }>(
+    await fetch(`/api/projects/${projectId}/publish`, { method: unpublish ? "DELETE" : "POST" }),
+  );
+}
 
 export type RestoreVersionResult = {
   version: ProjectVersion;

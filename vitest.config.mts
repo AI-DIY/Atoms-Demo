@@ -9,6 +9,7 @@ export default defineConfig({
     environment: "jsdom",
     env: {
       DATABASE_URL: "file:./test.db",
+      MOCK_LLM: "true",
     },
     fileParallelism: false,
     globalSetup: ["./tests/global-setup.ts"],

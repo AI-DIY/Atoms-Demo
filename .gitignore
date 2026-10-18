@@ -8,3 +8,11 @@ test-results/
 prisma/*.db
 prisma/*.db-journal
 prisma/.model-config-secret
+*.tsbuildinfo
+next-env.d.ts
+.artifacts/
+prisma/*.db-wal
+prisma/*.db-shm
+# Recruitment source material is confidential; deliver our answers only.
+研发笔试/
+补充说明/图片和附件/

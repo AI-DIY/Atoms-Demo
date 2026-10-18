@@ -26,6 +26,7 @@ export async function GET(request: Request, { params }: RouteContext) {
     const { ownerToken: _ownerToken, ...publicProject } = project as typeof project & {
       ownerToken?: string;
     };
+    void _ownerToken;
 
     return NextResponse.json(publicProject);
   } catch (error) {

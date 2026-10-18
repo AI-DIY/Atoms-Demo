@@ -286,13 +286,16 @@ describe("WorkspaceShell", () => {
 
     const goal = await screen.findByPlaceholderText("描述希望修改的内容");
     fireEvent.change(goal, { target: { value: "将预约表单改为双列布局" } });
+    expect(goal).toHaveValue("将预约表单改为双列布局");
+    expect(screen.getByRole("button", { name: "修改当前成果" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "修改当前成果" }));
+    expect(clientApi.startRun).toHaveBeenCalledTimes(1);
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("构建服务不可用");
     });
     expect(screen.getByText("已有产品结论")).toBeInTheDocument();
-    expect(screen.getByTitle("Generated application")).toHaveAttribute("srcdoc", "<h1>现有版本</h1>");
+    expect(screen.getByTitle("Generated application")).toHaveAttribute("srcdoc", expect.stringContaining("<h1>现有版本</h1>"));
 
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
 

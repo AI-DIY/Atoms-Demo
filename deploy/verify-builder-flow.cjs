@@ -24,7 +24,7 @@ async function responseJson(path, init) {
 
 async function main() {
   const email = `builder-check-${Date.now()}@example.com`;
-  const password = "builder verification password";
+  const password = require("node:crypto").randomBytes(24).toString("base64url");
   const { response: registered, body: user } = await responseJson("/api/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },

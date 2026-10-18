@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowUp, MoreHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { ProjectMessage } from "@/lib/client-api";
+import { ArrowUp } from "lucide-react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import type { ProjectMessage, ProjectRun } from "@/lib/client-api";
 import { roles } from "@/lib/roles";
 import { AgentTimeline, type TimelineEvent } from "./AgentTimeline";
 
@@ -28,7 +28,7 @@ function timelineEventsWithoutPersistedSummaries(
 function messageRoleLabel(role: string) {
   if (role === "user") return "你";
   if (role === "system") return "系统";
-  return "专家";
+  return roles.find((item) => item.id === role)?.label ?? (role === "reviewer" ? "验收检查" : "专家");
 }
 
 function mentionCandidates(request: string) {
@@ -58,6 +58,8 @@ export function ConversationPanel({
   projectTitle,
   status,
   canRetry = true,
+  mentionDraft,
+  runs = [],
 }: {
   error: string | null;
   events: TimelineEvent[];
@@ -70,6 +72,8 @@ export function ConversationPanel({
   projectTitle: string;
   status: string;
   canRetry?: boolean;
+  mentionDraft?: { text: string; sequence: number };
+  runs?: ProjectRun[];
 }) {
   const [request, setRequest] = useState<string | null>(null);
   const isEditingCurrentResult = status === "ready";
@@ -78,7 +82,9 @@ export function ConversationPanel({
   const activeRequest = request ?? (isEditingCurrentResult ? "" : projectGoal);
   const candidates = mentionCandidates(activeRequest);
 
-  useEffect(() => {
+  useEffect(() => { if (mentionDraft) setRequest(mentionDraft.text); }, [mentionDraft]);
+
+  useLayoutEffect(() => {
     if (isEditingCurrentResult) {
       setRequest("");
     }
@@ -116,9 +122,7 @@ export function ConversationPanel({
           <p className="eyebrow">当前工作区</p>
           <h2 className="conversation-title">从目标到可运行应用</h2>
         </div>
-        <button className="small-button" title="更多项目操作" type="button">
-          <MoreHorizontal aria-hidden />
-        </button>
+        <span className="workspace-badge">BUILD WITH AGENTS</span>
       </header>
 
       <div className="goal-card">
@@ -142,6 +146,7 @@ export function ConversationPanel({
       ) : null}
 
       <div className="feed">
+        {runs.some((run) => run.steps?.some((step) => step.artifactJson && step.artifactType !== "app")) ? <details className="artifact-details"><summary>查看团队交付文档</summary>{runs.slice(0, 5).flatMap((run) => (run.steps ?? []).filter((step) => step.artifactJson && step.artifactType !== "app").map((step, index) => <details key={`${run.id}-${index}`}><summary>{messageRoleLabel(step.role)} · {step.inputSummary}</summary><pre>{(() => { try { return JSON.stringify(JSON.parse(step.artifactJson!), null, 2); } catch { return step.artifactJson; } })()}</pre></details>))}</details> : null}
         {messages.length > 0 ? (
           <ol className="message-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {messages.map((message) => (
@@ -165,6 +170,7 @@ export function ConversationPanel({
                   key={role.id}
                   onClick={() => selectMention(role.label)}
                   role="option"
+                  aria-selected={false}
                   type="button"
                 >
                   <strong>@{role.label}</strong>
@@ -178,11 +184,12 @@ export function ConversationPanel({
             onChange={(event) => setRequest(event.target.value)}
             placeholder={requestLabel}
             rows={2}
+            maxLength={2000}
             value={activeRequest}
           />
           <button
             className="send-button"
-            disabled={running}
+            disabled={running || loading}
             style={{
               alignItems: "center",
               display: "inline-flex",

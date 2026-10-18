@@ -4,6 +4,19 @@ import { allowProjectCreation } from "@/lib/execution-limits";
 import { createProjectInput, maxProjectRequestBytes } from "@/lib/project-input";
 import { readBoundedJsonBody } from "@/lib/request-body";
 import { createProject } from "@/lib/repository";
+import { prisma } from "@/server/prisma";
+
+export async function GET(request: Request) {
+  const user = await getCurrentUser(request);
+  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  const projects = await prisma.project.findMany({
+    where: { userId: user.id },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, title: true, goal: true, status: true, currentVersion: true, updatedAt: true },
+    take: 100,
+  });
+  return NextResponse.json({ projects }, { headers: { "Cache-Control": "no-store" } });
+}
 
 export async function POST(request: Request) {
   const requestBody = await readBoundedJsonBody(request, maxProjectRequestBytes);

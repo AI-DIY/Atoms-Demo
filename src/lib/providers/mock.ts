@@ -57,16 +57,21 @@ const bookingAppHtml = `<!doctype html>
 
     function addAppointment(name, bookingDate, bookingService) {
       const item = document.createElement('li');
+      item.dataset.record = JSON.stringify([name, bookingDate, bookingService]);
       item.className = 'appointment';
       const details = document.createElement('span');
       details.textContent = name + ' · ' + bookingDate + ' · ' + bookingService;
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.textContent = '删除预约';
-      remove.addEventListener('click', () => item.remove());
+      remove.addEventListener('click', () => { item.remove(); saveItems(); });
       item.append(details, remove);
       list.append(item);
+      saveItems();
     }
+
+    function saveItems() { localStorage.setItem('appointments', JSON.stringify([...list.children].map(item => JSON.parse(item.dataset.record)))); }
+    JSON.parse(localStorage.getItem('appointments') || '[]').forEach(row => addAppointment(...row));
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -121,16 +126,21 @@ const contentCalendarAppHtml = `<!doctype html>
 
     function addContent(title, date, selectedChannel) {
       const item = document.createElement('li');
+      item.dataset.record = JSON.stringify([title, date, selectedChannel]);
       item.className = 'content-item';
       const details = document.createElement('span');
       details.textContent = title + ' · ' + date + ' · ' + selectedChannel;
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.textContent = '删除内容';
-      remove.addEventListener('click', () => item.remove());
+      remove.addEventListener('click', () => { item.remove(); saveItems(); });
       item.append(details, remove);
       list.append(item);
+      saveItems();
     }
+
+    function saveItems() { localStorage.setItem('content-items', JSON.stringify([...list.children].map(item => JSON.parse(item.dataset.record)))); }
+    JSON.parse(localStorage.getItem('content-items') || '[]').forEach(row => addContent(...row));
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -189,16 +199,21 @@ const leadBoardAppHtml = `<!doctype html>
 
     function addLead(name, person, leadStage) {
       const item = document.createElement('li');
+      item.dataset.record = JSON.stringify([name, person, leadStage]);
       item.className = 'lead';
       const details = document.createElement('span');
       details.textContent = name + ' · ' + person + ' · ' + leadStage;
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.textContent = '删除线索';
-      remove.addEventListener('click', () => item.remove());
+      remove.addEventListener('click', () => { item.remove(); saveItems(); });
       item.append(details, remove);
       list.append(item);
+      saveItems();
     }
+
+    function saveItems() { localStorage.setItem('leads', JSON.stringify([...list.children].map(item => JSON.parse(item.dataset.record)))); }
+    JSON.parse(localStorage.getItem('leads') || '[]').forEach(row => addLead(...row));
 
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -306,12 +321,12 @@ export class MockProvider implements AgentProvider {
               roles: ["pm", "architect", "engineer"],
               risks: [
                 "需求范围可能超过单文件应用的交付边界",
-                "预约数据仅在当前浏览器会话中保存",
-                "需要人工确认核心业务流程后再开始构建",
+                "演示模式使用内置模板，不调用真实模型",
+                "发布前需要人工验证核心业务流程",
               ],
             },
           },
-          suggestedNextAction: "审批团队计划后开始构建",
+          suggestedNextAction: "按计划自动开始构建",
         };
       case "pm":
         return {
@@ -341,13 +356,25 @@ export class MockProvider implements AgentProvider {
           suggestedNextAction: "由工程师生成可交互的单文件网页",
         };
       case "engineer":
+        const previous = context.artifacts.find((artifact) => artifact.type === "app")?.content as { html?: string; title?: string } | undefined;
+        let html = previous?.html ?? template.html;
+        if (previous?.html) {
+          const changes: string[] = [];
+          if (/双列|两列|2列/.test(context.request)) changes.push('form{grid-template-columns:repeat(2,minmax(0,1fr))}');
+          if (/绿色|绿/.test(context.request)) changes.push('button{background:#047857;border-color:#047857}');
+          if (/蓝色|蓝/.test(context.request)) changes.push('button{background:#1d4ed8;border-color:#1d4ed8}');
+          if (/深色|暗色|深/.test(context.request)) changes.push(':root{color:#e2e8f0;background:#0f172a}p{color:#94a3b8}input,select,.appointment,.content-item,.lead{color:#e2e8f0;background:#1e293b}');
+          if (!changes.length) throw new Error("演示模式仅支持双列布局、绿色、蓝色和深色主题的迭代。任意需求请配置真实模型。");
+          const style = `<style>${changes.join('')}@media(max-width:680px){form{grid-template-columns:1fr}}</style>`;
+          html = html.includes('</head>') ? html.replace('</head>', style + '</head>') : style + html;
+        }
         return {
-          summary: `已生成可管理${template.productSummary}的独立网页应用。`,
+          summary: previous ? "已按演示模式支持的修改生成新版本。" : `已生成可管理${template.productSummary}的独立网页应用。`,
           artifact: {
             type: "app",
             content: {
-              title: template.title,
-              html: template.html,
+              title: previous?.title ?? template.title,
+              html,
             },
           },
           suggestedNextAction: "在预览中测试添加和删除预约",

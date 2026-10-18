@@ -179,11 +179,13 @@ describe("team orchestration", () => {
     ]);
   });
 
-  it("fails before completing review when an app omits a PM acceptance marker", async () => {
+  it("fails after one repair when an app still omits a PM acceptance marker", async () => {
     const provider = new RecordingProvider();
+    let engineerCalls = 0;
     const missingCoverageProvider: AgentProvider = {
       async generate(role, context) {
         if (role === "engineer") {
+          engineerCalls += 1;
           return {
             summary: "未覆盖验收条件的应用",
             artifact: {
@@ -210,11 +212,38 @@ describe("team orchestration", () => {
     await expect(
       buildApprovedPlan(missingCoverageProvider, approvePlan(plan)),
     ).rejects.toThrow("acceptance coverage");
+    expect(engineerCalls).toBe(2);
     expect(provider.calls.map((call) => call.role)).toEqual([
       "leader",
       "pm",
       "architect",
     ]);
+  });
+
+  it("repairs a dynamic-only acceptance marker once with the prior app and review feedback", async () => {
+    const provider = new RecordingProvider();
+    const engineerContexts: AgentContext[] = [];
+    const dynamicHtml = validAppHtml.replace(' data-acceptance="可创建一条预约"', "")
+      .replace("</body>", "<script>document.querySelector('button').dataset.acceptance='可创建一条预约';</script></body>");
+    const repairProvider: AgentProvider = {
+      async generate(role, context) {
+        if (role === "engineer") {
+          engineerContexts.push(context);
+          return {
+            summary: "应用实现",
+            artifact: { type: "app", content: { title: "预约工具", html: engineerContexts.length === 1 ? dynamicHtml : validAppHtml } },
+          };
+        }
+        return provider.generate(role, context);
+      },
+    };
+    const plan = await createTeamPlan(repairProvider, "创建预约工具");
+    const result = await buildApprovedPlan(repairProvider, approvePlan(plan));
+    expect(engineerContexts).toHaveLength(2);
+    expect(engineerContexts[1].request).toContain("可创建一条预约");
+    expect(engineerContexts[1].artifacts.at(-1)).toMatchObject({ type: "app", content: { html: dynamicHtml } });
+    expect(result.app.content.html).toBe(validAppHtml);
+    expect(result.steps.map((step) => step.role)).toEqual(["leader", "pm", "architect", "engineer", "engineer", "reviewer"]);
   });
 
   it.each([

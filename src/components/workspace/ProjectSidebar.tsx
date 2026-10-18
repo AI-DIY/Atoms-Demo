@@ -4,6 +4,7 @@ import { LogOut, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { ArtifactType, RoleId } from "@/lib/domain";
 import { roles } from "@/lib/roles";
+import type { ProjectSummary } from "@/lib/client-api";
 
 const roleColors: Record<RoleId, string> = {
   leader: "#a6e07a",
@@ -34,6 +35,7 @@ export function ProjectSidebar({
   title,
   email,
   onLogout,
+  projects = [], activeProjectId, onSelect, onMention, providerMode,
 }: {
   creating?: boolean;
   loading: boolean;
@@ -41,14 +43,19 @@ export function ProjectSidebar({
   title: string;
   email?: string;
   onLogout?: () => void;
+  projects?: ProjectSummary[];
+  activeProjectId?: string;
+  onSelect?: (id: string) => void;
+  onMention?: (label: string) => void;
+  providerMode?: string;
 }) {
   return (
-    <div className="sidebar">
+    <div className="sidebar-content">
       <div className="brand">
         <div className="brand-mark">A</div>
         <div>
           <span className="brand-name">Agent Studio</span>
-          <span className="brand-subtitle">Goal to working app</span>
+          <span className="brand-subtitle">Atoms Demo · 2.0</span>
         </div>
       </div>
 
@@ -59,13 +66,13 @@ export function ProjectSidebar({
 
       <section className="sidebar-section" aria-label="Project list">
         <p className="section-label">项目</p>
-        <button className="project-row active" type="button">
+        {projects.length ? <div className="project-list">{projects.map((item) => <button key={item.id} disabled={creating} onClick={() => onSelect?.(item.id)} className={"project-row " + (activeProjectId === item.id ? "active" : "")} type="button"><i className="project-dot" aria-hidden /><span><strong>{item.title}</strong><span>{item.currentVersion ? `V${item.currentVersion} · 已保存` : "项目草稿"}</span></span></button>)}</div> : <button className="project-row active" type="button">
           <i className="project-dot" aria-hidden />
           <span>
             <strong>{title}</strong>
             <span>{loading ? "正在加载" : "项目草稿"}</span>
           </span>
-        </button>
+        </button>}
       </section>
 
       <section className="sidebar-section" aria-label="Agent roles">
@@ -78,6 +85,8 @@ export function ProjectSidebar({
               <button
                 className="role-button"
                 key={role.id}
+                onClick={() => onMention?.(role.label)}
+                disabled={creating}
                 style={{ "--role-color": roleColors[role.id] } as CSSProperties}
                 type="button"
               >
@@ -92,6 +101,7 @@ export function ProjectSidebar({
         </div>
       </section>
 
+      <p className="provider-mode">{providerMode}</p>
       <div className="provider-status">
         <i className="status-dot" aria-hidden />
         <span>{email ?? "当前用户"}</span>

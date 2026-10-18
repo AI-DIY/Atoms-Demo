@@ -18,7 +18,7 @@ describe("PreviewPanel", () => {
     const preview = screen.getByTitle("Generated application");
     expect(preview).toHaveAttribute(
       "sandbox",
-      "allow-scripts allow-forms",
+      "allow-scripts allow-forms allow-modals",
     );
     expect(preview).toHaveAttribute("srcdoc", expect.stringContaining("版本一"));
 

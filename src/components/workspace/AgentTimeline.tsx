@@ -150,7 +150,7 @@ export function AgentTimeline({
         </section>
       ) : null}
       {displayedEvents.length === 0 ? (
-        <p className="timeline-empty">提交目标后将在这里显示团队进度。</p>
+        <p className="timeline-empty">{status === "ready" ? "当前成果已保存。可以继续提出修改，或查看团队交付文档。" : "提交目标后将在这里显示团队进度。"}</p>
       ) : (
         <ol className="timeline-list">
           {displayedEvents.map((event, index) => (

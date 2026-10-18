@@ -1,0 +1,21 @@
+{
+  "testedAt": "2026-10-18T04:27:26.597Z",
+  "origin": "http://atoms.ai-diy.me",
+  "mode": "live",
+  "projectId": "cmvdbngfy0004r20pr1qmlxhp",
+  "publishedUrl": "http://atoms.ai-diy.me/share/YjUvPwTRCHXswwONjrE5SuFr",
+  "checks": [
+    "register",
+    "team-generation-v1",
+    "form-submit",
+    "sqlite-persistence",
+    "reload",
+    "real-iteration-v2",
+    "publish",
+    "anonymous-visitor-isolation",
+    "visitor-persistence",
+    "delete-record",
+    "restore-v1-keeps-data-and-public-v2",
+    "mobile-no-overflow"
+  ]
+}

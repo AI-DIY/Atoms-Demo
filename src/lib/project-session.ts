@@ -4,6 +4,7 @@ import {
   type LoadedProject,
   type ProjectIdentity,
   type ProjectInput,
+  type ProjectSummary,
 } from "./client-api";
 
 export const projectIdentityStorageKey = "agent-studio-owner-token";
@@ -14,6 +15,7 @@ const inFlightProjectRestores = new WeakMap<
 >();
 
 export type ProjectApi = {
+  listProjects?(): Promise<ProjectSummary[]>;
   createProject(input: ProjectInput): Promise<CreatedProject>;
   loadProject(identity: ProjectIdentity): Promise<LoadedProject>;
 };
@@ -108,13 +110,18 @@ async function restoreOrCreateProjectInternal({
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         safelyRemove(storage, projectIdentityStorageKey);
-        return createAndLoadProject(storage, api, defaultProject);
+      } else {
+        throw error;
       }
-
-      throw error;
     }
   }
 
+  const projects = api.listProjects ? await api.listProjects() : undefined;
+  if (projects?.length) {
+    const identity = { projectId: projects[0].id, ownerToken: "session" };
+    safelyWrite(storage, projectIdentityStorageKey, JSON.stringify(identity));
+    return api.loadProject(identity);
+  }
   return createAndLoadProject(storage, api, defaultProject);
 }
 

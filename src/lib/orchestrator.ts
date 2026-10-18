@@ -190,13 +190,28 @@ export async function buildApprovedPlan(
 
   // Reviewer is deterministic: it validates the already-sanitized app without a model call.
   await callbacks?.onStepStarted?.("reviewer");
-  const app = parseArtifact("app", engineerStep.artifact.content);
+  let app = parseArtifact("app", engineerStep.artifact.content);
   const prd = pmStep.artifact as PrdArtifact;
-  assertAcceptanceCoverage(prd, app);
+  const repairSteps: TeamStep[] = [];
+  try {
+    assertAcceptanceCoverage(prd, app);
+  } catch (error) {
+    // A dynamic element may carry its marker only in JavaScript. Ask Engineer
+    // to repair the actual app once; never fabricate coverage or loop forever.
+    const repairedStep = await runRole(provider, "engineer", {
+      goal: plan.goal,
+      request: `静态验收未通过：${error instanceof Error ? error.message : "缺少验收标记"}。请检查并实现缺失功能，将每条验收标准的完整 data-acceptance 属性写在对应的静态 HTML 元素上。动态列表的标准应放在静态容器上，不能只通过 JavaScript 设置。保留现有功能、界面与存储键，返回完整修复应用。`,
+      artifacts: [validatedPlan, prd, architectStep.artifact, app],
+    }, callbacks);
+    repairSteps.push(repairedStep);
+    app = parseArtifact("app", repairedStep.artifact.content);
+    await callbacks?.onStepStarted?.("reviewer");
+    assertAcceptanceCoverage(prd, app);
+  }
   const reviewerStep: TeamStep = {
     role: "reviewer",
     status: "completed",
-    summary: `已完成应用产物结构、安全边界与 ${prd.content.acceptance.length} 条验收条件覆盖校验。`,
+    summary: `已完成应用结构与 ${prd.content.acceptance.length} 条验收标记的静态校验，请在预览中实际验证交互。`,
     artifact: app,
   };
   await callbacks?.onStepCompleted?.(reviewerStep);
@@ -205,7 +220,7 @@ export async function buildApprovedPlan(
     ...plan,
     approved: true,
     artifact: validatedPlan,
-    steps: [...plan.steps, pmStep, architectStep, engineerStep, reviewerStep],
+    steps: [...plan.steps, pmStep, architectStep, engineerStep, ...repairSteps, reviewerStep],
     app,
   };
 }
