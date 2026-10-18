@@ -7,8 +7,8 @@ const clientApi = vi.hoisted(() => ({
 
 vi.mock("@/lib/client-api", () => clientApi);
 
-vi.mock("@/components/workspace/WorkspaceShell", () => ({
-  WorkspaceShell: ({ userEmail }: { userEmail?: string }) => <p>工作区已加载：{userEmail}</p>,
+vi.mock("@/components/studio/StudioApp", () => ({
+  StudioApp: ({ user }: { user: { email?: string } }) => <p>首页已加载：{user.email}</p>,
 }));
 
 import { AppShell } from "@/components/auth/AppShell";
@@ -26,9 +26,9 @@ describe("AppShell", () => {
     cleanup();
   });
 
-  it("enters the workspace immediately for an authenticated user", async () => {
+  it("opens the studio home for an authenticated user", async () => {
     render(<AppShell />);
 
-    expect(await screen.findByText("工作区已加载：user@example.com")).toBeInTheDocument();
+    expect(await screen.findByText("首页已加载：user@example.com")).toBeInTheDocument();
   });
 });

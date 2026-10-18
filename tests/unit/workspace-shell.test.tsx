@@ -534,6 +534,7 @@ describe("WorkspaceShell", () => {
     render(<WorkspaceShell />);
 
     await screen.findByTitle("Generated application");
+    fireEvent.change(screen.getByRole("textbox", { name: "描述希望修改的内容" }), { target: { value: "修改颜色" } });
     fireEvent.click(screen.getByRole("button", { name: "版本" }));
     const versionOne = screen.getByRole("button", { name: "V1" });
     fireEvent.click(versionOne);
@@ -591,6 +592,7 @@ describe("WorkspaceShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "V1" }));
 
     const submit = screen.getByRole("button", { name: "修改当前成果" });
+    fireEvent.change(screen.getByRole("textbox", { name: "描述希望修改的内容" }), { target: { value: "调整页面配色" } });
     await waitFor(() => expect(submit).toBeDisabled());
     fireEvent.click(submit);
     expect(clientApi.startRun).not.toHaveBeenCalled();

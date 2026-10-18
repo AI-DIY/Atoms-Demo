@@ -21,7 +21,13 @@ export type ProjectRun = {
   status: string;
   planJson?: string | null;
   startedAt?: string;
-  steps?: Array<{ role: string; status: string; inputSummary?: string; artifactType?: string | null; artifactJson?: string | null }>;
+  steps?: Array<{
+    role: string;
+    status: string;
+    inputSummary?: string;
+    artifactType?: string | null;
+    artifactJson?: string | null;
+  }>;
 };
 
 export type ProjectMessage = {
@@ -49,15 +55,51 @@ export type LoadedProject = ProjectInput & {
   versions?: ProjectVersion[];
 };
 
-export type ProjectSummary = ProjectInput & { id: string; status: string; currentVersion: number };
+export type ProjectSummary = ProjectInput & {
+  id: string;
+  status: string;
+  currentVersion: number;
+  updatedAt?: string;
+};
+
+export async function renameProject(projectId: string, title: string) {
+  return readJson<ProjectSummary>(
+    await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  );
+}
+
+export async function saveProjectCode(
+  projectId: string,
+  html: string,
+  baseVersion: number,
+) {
+  return readJson<ProjectVersion>(
+    await fetch(`/api/projects/${projectId}/versions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ html, baseVersion }),
+    }),
+  );
+}
 
 export async function listProjects(): Promise<ProjectSummary[]> {
-  return (await readJson<{ projects: ProjectSummary[] }>(await fetch("/api/projects"))).projects;
+  return (
+    await readJson<{ projects: ProjectSummary[] }>(await fetch("/api/projects"))
+  ).projects;
 }
 
 export async function publishProject(projectId: string, unpublish = false) {
-  return readJson<{ shareToken: string | null; publishedVersion: number | null }>(
-    await fetch(`/api/projects/${projectId}/publish`, { method: unpublish ? "DELETE" : "POST" }),
+  return readJson<{
+    shareToken: string | null;
+    publishedVersion: number | null;
+  }>(
+    await fetch(`/api/projects/${projectId}/publish`, {
+      method: unpublish ? "DELETE" : "POST",
+    }),
   );
 }
 
@@ -88,7 +130,9 @@ export class ApiError extends Error {
   }
 }
 
-export async function getCurrentUser(fetcher: Fetcher = fetch): Promise<CurrentUser> {
+export async function getCurrentUser(
+  fetcher: Fetcher = fetch,
+): Promise<CurrentUser> {
   const response = await fetcher("/api/auth/me");
   return readJson<CurrentUser>(response);
 }
@@ -133,7 +177,11 @@ function errorMessageFromResponseBody(detail: string): string {
       const message = Reflect.get(body, "message");
 
       if (typeof error === "string") return error;
-      if (error && typeof error === "object" && typeof Reflect.get(error, "message") === "string") {
+      if (
+        error &&
+        typeof error === "object" &&
+        typeof Reflect.get(error, "message") === "string"
+      ) {
         return Reflect.get(error, "message") as string;
       }
       if (typeof message === "string") return message;
@@ -215,7 +263,10 @@ function emitSseEvent(block: string, onEvent: RunEventHandler) {
   }
 }
 
-async function consumeSse(response: Response, onEvent: RunEventHandler): Promise<void> {
+async function consumeSse(
+  response: Response,
+  onEvent: RunEventHandler,
+): Promise<void> {
   if (!response.ok) {
     throw new ApiError(response.status, await readErrorMessage(response));
   }

@@ -30,10 +30,26 @@ export function VersionPanel({
           onClick={() => onSelect(version.version)}
           type="button"
         >
-          <span>V{version.version}</span>
+          <span className="version-number">V{version.version}</span>
+          <span className="version-description">
+            <strong>{version.title}</strong>
+            <small>
+              {version.version === currentVersion
+                ? "当前工作版本"
+                : "点击恢复此版本"}
+            </small>
+          </span>
+          <span aria-hidden>
+            {version.version === currentVersion ? "✓" : "↶"}
+          </span>
         </button>
       ))}
-      {error ? <p className="workspace-error" role="alert">{error}</p> : null}
+      {!versions.length ? <p>完成首次构建后，版本会自动保存在这里。</p> : null}
+      {error ? (
+        <p className="workspace-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

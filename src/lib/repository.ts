@@ -11,6 +11,7 @@ type VersionInput = {
   title: string;
   html: string;
   sourceRunId?: string;
+  expectedVersion?: number;
 };
 
 type MessageInput = {
@@ -342,6 +343,10 @@ export async function createVersion(
     await requireOwnedProject(projectId, ownerToken);
 
     return prisma.$transaction(async (transaction) => {
+      if (input.expectedVersion !== undefined) {
+        const project = await transaction.project.findUniqueOrThrow({ where: { id: projectId } });
+        if (project.currentVersion !== input.expectedVersion || project.status !== "ready") throw new Error("Version conflict");
+      }
       const latest = await transaction.appVersion.findFirst({
         where: { projectId },
         orderBy: { version: "desc" },

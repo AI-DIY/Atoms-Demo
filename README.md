@@ -1,17 +1,18 @@
-# Agent Studio · Atoms Demo 2.0.0
+# Atoms Demo 2.0.0
 
 从一句产品目标出发，通过团队负责人、产品经理、架构师和工程师的协作，生成可交互的网页应用，再继续迭代、保存数据、恢复版本和发布分享。
 
 - **在线 Demo**：[atoms.ai-diy.me](http://atoms.ai-diy.me)
-- **真实生成应用示例**：[摄影预约与报价工作台 · V2，无需登录](http://atoms.ai-diy.me/share/YjUvPwTRCHXswwONjrE5SuFr)
+- **真实生成应用示例**：[摄影预约与报价工作台 · V3，无需登录](http://atoms.ai-diy.me/share/qSNZtk4RAOGFpM1NQ-cZW4Jb)
 - **笔试交付文档**：[全栈岗位笔试——赵心语](./全栈岗位笔试——赵心语/README.md)
 - **实现思路、完成度、AI Coding 与扩展计划**：[补充说明](./补充说明/全栈岗位笔试——赵心语.md)
 - **测试、部署和 Dufs 核验**：[验收与部署记录](./补充说明/验收与部署记录.md)
+- **官网对照与界面改版**：[首页、资源、项目与工作区](./补充说明/官网对照与改版说明.md)
 - **版本**：[2.0.0](https://github.com/AI-DIY/Atoms-Demo/tree/2.0.0)
 
 ## 已实现
 
-邮箱注册和登录、账户隔离、多项目保存与切换、SSE 团队进度、可展开的结构化交付文档、八个专家的 `@` 咨询、真实 Responses 模型生成、自然语言迭代、桌面/移动预览、刷新预览、HTML 下载、历史版本恢复、公开发布/更新/撤销。
+Atoms 风格深灰首页、产品想法输入、资源分类/搜索/收藏、邮箱注册和登录、账户隔离、项目搜索/排序/重命名/切换、SSE 团队进度、可展开的结构化交付文档、八个专家的 `@` 咨询、真实 Responses 模型生成、自然语言迭代、桌面/移动预览、专注预览、HTML 源码编辑与新版本保存、历史版本恢复、HTML 下载及公开发布/更新/撤销。
 
 生成应用通过 `localStorage.getItem/setItem` 使用宿主提供的存储桥。工作区数据按项目写入 SQLite，刷新和重新登录后可恢复；公开页面的数据仅保存在访客自己的浏览器，不能访问作者数据。发布固定版本，恢复或迭代工作区不会自动改变已发布应用。
 
@@ -27,7 +28,7 @@ pnpm exec prisma migrate deploy
 pnpm dev
 ```
 
-打开 `http://localhost:3000`，注册邮箱账户，点击“制定团队计划”即可自动完成构建，无需额外审批。
+打开 `http://localhost:3000`，在首页描述想法或从资源库选择创意，点击“开始构建”。未登录时先注册邮箱账户，随后自动进入团队工作区并继续构建。手机端可以切换“对话”和“预览”面板。
 
 PowerShell 可用 `Copy-Item .env.example .env` 替代 `cp`。生产环境使用 `prisma migrate deploy`，不要执行重置数据库的命令。
 
@@ -77,14 +78,16 @@ git diff --check
 
 ```text
 /opt/agent-studio/runtime/          Node.js 与 pnpm
-/opt/agent-studio/releases/2.0.0-verified/   版本源码与构建产物
+/opt/agent-studio/releases/2.0.0-delivery/   版本源码与构建产物
 /opt/agent-studio/current          当前版本符号链接
 /etc/agent-studio.env              仅服务端可读的模型配置
 /var/lib/agent-studio/             SQLite 持久数据
 /var/backups/agent-studio/          一致性数据库备份
 ```
 
-使用 `deploy/build-release.sh` 构建指定版本，`deploy/activate-release.sh /opt/agent-studio/releases/2.0.0-verified` 执行备份、迁移、切换和健康检查。脚本仅管理 `agent-studio` 与 `agent-studio-proxy`；代理采用自己的 Nginx 配置，不启用发行版默认 Nginx 服务。
+使用 `deploy/build-release.sh` 构建指定版本，`deploy/activate-release.sh /opt/agent-studio/releases/2.0.0-delivery` 执行备份、迁移、切换和健康检查。脚本仅管理 `agent-studio` 与 `agent-studio-proxy`；代理采用自己的 Nginx 配置，不启用发行版默认 Nginx 服务。
+
+每次构建必须使用新的独立版本目录。构建脚本会拒绝在 `current` 指向的活动版本目录中运行，避免 Next.js 清理正在使用的产物。
 
 ```sh
 systemctl status agent-studio agent-studio-proxy --no-pager
